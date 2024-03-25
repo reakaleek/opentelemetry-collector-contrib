@@ -5,6 +5,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,79 +58,61 @@ func (ghalr *githubActionsLogReceiver) Start(_ context.Context, _ component.Host
 	return nil
 }
 
-func (ghalr *githubActionsLogReceiver) Shutdown(ctx context.Context) error {
-	var err error
-	if ghalr.server != nil {
-		err = ghalr.server.Close()
+func (ghalr *githubActionsLogReceiver) Shutdown(_ context.Context) error {
+	if ghalr.server == nil {
+		return nil
 	}
+	err := ghalr.server.Close()
 	ghalr.wg.Wait()
 	return err
 }
 
-func (ghalr *githubActionsLogReceiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var response GitHubWorkflowRunWebhookPayload
-	err := json.NewDecoder(r.Body).Decode(&response)
+func (ghalr *githubActionsLogReceiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	var response GitHubWorkflowRunEvent
+	err := json.NewDecoder(req.Body).Decode(&response)
 	if err != nil {
 		ghalr.logger.Error("Failed to decode request", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	ghalr.logger.Info("Received a request", zap.String("path", r.URL.Path))
+	ghalr.logger.Info("Received a request", zap.String("path", req.URL.Path))
 	ghalr.logger.Debug("Request Payload", zap.Any("response", response))
-
-	if r.URL.Path != ghalr.config.Path {
-		ghalr.logger.Info("Received a request to an unknown path", zap.String("path", r.URL.Path))
+	if req.URL.Path != ghalr.config.Path {
+		ghalr.logger.Info("Received a request to an unknown path", zap.String("path", req.URL.Path))
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-
 	if response.Action != "completed" {
 		ghalr.logger.Info("Skipping the request because it is no a completed workflow run")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-
 	ghClient := github.NewClient(nil).WithAuthToken(string(ghalr.config.GitHubToken))
-	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(r.Context(), response.Repository.GetOwner().GetLogin(), response.Repository.GetName(), response.WorkflowRun.GetID(), nil)
+	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(req.Context(), response.Repository.GetOwner().GetLogin(), response.Repository.GetName(), response.WorkflowRun.GetID(), nil)
 	if err != nil {
 		ghalr.logger.Error("Failed to get workflow Jobs", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	ghalr.logger.Info("Received Jobs", zap.Any("Jobs", workflowJobs))
-
-	runLogZip, err := ghalr.getRunLog(r.Context(), ghClient, http.DefaultClient, response.Repository, response.WorkflowRun)
+	runLogZip, err := ghalr.getRunLog(req.Context(), ghClient, http.DefaultClient, response.Repository, response.WorkflowRun)
 	if err != nil {
 		ghalr.logger.Error("Failed to get run log", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	defer runLogZip.Close()
-	jobs := make([]Job, len(workflowJobs.Jobs))
-	for i, job := range workflowJobs.Jobs {
-		jobs[i] = mapJob(job)
-	}
-
-	rateLimit, _, err := ghClient.RateLimit.Get(r.Context())
-
-	ghalr.logger.Info("Rate limit", zap.Any("rate_limit", rateLimit.GetCore()))
-	if err != nil {
-		return
-	}
+	jobs := mapJobs(workflowJobs.Jobs)
 	attachRunLog(&runLogZip.Reader, jobs)
-	run := Run{
-		Repository: Repository{FullName: response.Repository.GetFullName()},
-		Workflow:   Workflow{Name: response.Workflow.GetName()},
-		Jobs:       jobs,
-		RunAttempt: int64(response.WorkflowRun.GetRunAttempt()),
-	}
-	logs, err := runToLogs(ghalr.logger, run)
+	run := mapRun(&response.WorkflowRun)
+	repository := mapRepository(&response.Repository)
+	logs, err := ghalr.toLogs(repository, run, jobs)
 	if err != nil {
 		ghalr.logger.Error("Failed to convert Jobs to logs", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	err = ghalr.consumer.ConsumeLogs(r.Context(), logs)
+	err = ghalr.consumer.ConsumeLogs(req.Context(), logs)
 	if err != nil {
 		ghalr.logger.Error("Failed to consume logs", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
@@ -137,19 +121,20 @@ func (ghalr *githubActionsLogReceiver) ServeHTTP(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusOK)
 }
 
-func runToLogs(logger *zap.Logger, run Run) (plog.Logs, error) {
+func (ghalr *githubActionsLogReceiver) toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 	logs := plog.NewLogs()
 	resourceLogs := logs.ResourceLogs().AppendEmpty()
 	resourceAttributes := resourceLogs.Resource().Attributes()
-	resourceAttributes.PutStr("repository", run.Repository.FullName)
+	resourceAttributes.PutStr("repository", repository.FullName)
 	resourceAttributes.PutInt("workflow_run.run_attempt", run.RunAttempt)
-	resourceAttributes.PutInt("workflow_run.id", run.Jobs[0].RunID)
-	for _, job := range run.Jobs {
+	resourceAttributes.PutInt("workflow_run.id", run.ID)
+	for _, job := range jobs {
 		scopeLogsSlice := logs.ResourceLogs().AppendEmpty().ScopeLogs()
 		scopeLogs := scopeLogsSlice.AppendEmpty()
 		logRecords := scopeLogs.LogRecords()
 		for _, step := range job.Steps {
 			if step.Log == nil {
+				ghalr.logger.Warn(fmt.Sprintf("The step %s did not have any logs", step.Name), zap.Any("run", run), zap.Any("step", step))
 				continue
 			}
 			f, err := step.Log.Open()
@@ -159,44 +144,94 @@ func runToLogs(logger *zap.Logger, run Run) (plog.Logs, error) {
 			scanner := bufio.NewScanner(f)
 			for scanner.Scan() {
 				logRecord := logRecords.AppendEmpty()
-				parts := strings.SplitN(scanner.Text(), " ", 2)
-				extractedTimestamp := parts[0]
-				extractedLogMessage := parts[1]
-				var timestamp time.Time
-				timestamp, err = time.Parse(time.RFC3339Nano, extractedTimestamp)
+
+				logLine, err := parseLogLine(scanner.Text())
 				if err != nil {
-					return logs, fmt.Errorf("failed to parse timestamp: %w", err)
+					return logs, fmt.Errorf("failed to parse log line: %w", err)
 				}
-				if strings.HasPrefix(extractedLogMessage, "#[debug]") {
+
+				if strings.HasPrefix(logLine.Body, "#[debug]") {
 					logRecord.SetSeverityNumber(5) // DEBUG
 				}
-				logRecord.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
-				logRecord.SetObservedTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-				logRecord.Attributes().PutStr("github.repository", run.Repository.FullName)
-				logRecord.Attributes().PutStr("github.workflow.name", run.Workflow.Name)
-				logRecord.Attributes().PutInt("github.workflow_run.id", job.RunID)
-				logRecord.Attributes().PutInt("github.workflow_run.run_attempt", run.RunAttempt)
-				logRecord.Attributes().PutInt("github.workflow_job.id", job.ID)
-				logRecord.Attributes().PutStr("github.workflow_job.job.name", job.Name)
-				logRecord.Attributes().PutStr("github.workflow_job.job.url", job.URL)
-				logRecord.Attributes().PutStr("github.workflow_job.started_at", pcommon.NewTimestampFromTime(job.StartedAt).String())
-				logRecord.Attributes().PutStr("github.workflow_job.completed_at", pcommon.NewTimestampFromTime(job.CompletedAt).String())
-				logRecord.Attributes().PutStr("github.workflow_job.conclusion", string(job.Conclusion))
-				logRecord.Attributes().PutStr("github.workflow_job.status", string(job.Status))
 
-				logRecord.Attributes().PutStr("github.workflow_job.step.name", step.Name)
-				logRecord.Attributes().PutInt("github.workflow_job.step.number", int64(step.Number))
-				logRecord.Attributes().PutStr("github.workflow_job.step.conclusion", string(step.Conclusion))
-				logRecord.Attributes().PutStr("github.workflow_job.step.status", string(step.Status))
-				logRecord.Attributes().PutStr("github.workflow_job.step.status", string(step.Status))
-				logRecord.Body().SetStr(extractedLogMessage)
+				if err = setTraceAndSpanId(&logRecord, &run, &job, &step); err != nil {
+					return logs, err
+				}
+
+				logRecord.SetTimestamp(pcommon.NewTimestampFromTime(logLine.Timestamp))
+				logRecord.SetObservedTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+
+				logRecord.Attributes().PutStr("github.repository", repository.FullName)
+				logRecord.Body().SetStr(logLine.Body)
+
+				addRunAttributes(&logRecord, &run)
+				addJobAttributes(&logRecord, &job)
+				addStepAttributes(&logRecord, &step)
 			}
 		}
 	}
 	return logs, nil
 }
 
-func getLog(httpClient *http.Client, logURL string) (io.ReadCloser, error) {
+func parseLogLine(line string) (*LogLine, error) {
+	parts := strings.SplitN(line, " ", 2)
+	extractedTimestamp := parts[0]
+	extractedLogMessage := parts[1]
+	timestamp, err := time.Parse(time.RFC3339Nano, extractedTimestamp)
+	if err != nil {
+		return &LogLine{}, err
+	}
+	return &LogLine{
+		Body:      extractedLogMessage,
+		Timestamp: timestamp,
+	}, nil
+}
+
+func setTraceAndSpanId(logRecord *plog.LogRecord, run *Run, job *Job, step *Step) error {
+	traceId, err := generateTraceID(run.ID, int(run.RunAttempt))
+	if err != nil {
+		return err
+	}
+	logRecord.SetTraceID(traceId)
+	spanId, err := generateStepSpanID(run.ID, int(run.RunAttempt), job.Name, step.Name, int(step.Number))
+	if err != nil {
+		return err
+	}
+	logRecord.SetSpanID(spanId)
+	return nil
+}
+
+func addRunAttributes(logRecord *plog.LogRecord, run *Run) {
+	logRecord.Attributes().PutInt("github.workflow_run.id", run.ID)
+	logRecord.Attributes().PutStr("github.workflow_run.name", run.Name)
+	logRecord.Attributes().PutInt("github.workflow_run.run_attempt", run.RunAttempt)
+	logRecord.Attributes().PutInt("github.workflow_run.run_number", run.RunNumber)
+	logRecord.Attributes().PutStr("github.workflow_run.url", fmt.Sprintf("%s/attempts/%d", run.URL, run.RunAttempt))
+	logRecord.Attributes().PutStr("github.workflow_run.conclusion", run.Conclusion)
+	logRecord.Attributes().PutStr("github.workflow_run.status", run.Status)
+	logRecord.Attributes().PutStr("github.workflow_run.run_started_at", pcommon.NewTimestampFromTime(run.RunStartedAt).String())
+}
+
+func addJobAttributes(logRecord *plog.LogRecord, job *Job) {
+	logRecord.Attributes().PutInt("github.workflow_job.id", job.ID)
+	logRecord.Attributes().PutStr("github.workflow_job.name", job.Name)
+	logRecord.Attributes().PutStr("github.workflow_job.url", job.URL)
+	logRecord.Attributes().PutStr("github.workflow_job.started_at", pcommon.NewTimestampFromTime(job.StartedAt).String())
+	logRecord.Attributes().PutStr("github.workflow_job.completed_at", pcommon.NewTimestampFromTime(job.CompletedAt).String())
+	logRecord.Attributes().PutStr("github.workflow_job.conclusion", job.Conclusion)
+	logRecord.Attributes().PutStr("github.workflow_job.status", job.Status)
+}
+
+func addStepAttributes(logRecord *plog.LogRecord, step *Step) {
+	logRecord.Attributes().PutStr("github.workflow_job.step.name", step.Name)
+	logRecord.Attributes().PutInt("github.workflow_job.step.number", step.Number)
+	logRecord.Attributes().PutStr("github.workflow_job.step.started_at", pcommon.NewTimestampFromTime(step.StartedAt).String())
+	logRecord.Attributes().PutStr("github.workflow_job.step.completed_at", pcommon.NewTimestampFromTime(step.CompletedAt).String())
+	logRecord.Attributes().PutStr("github.workflow_job.step.conclusion", step.Conclusion)
+	logRecord.Attributes().PutStr("github.workflow_job.step.status", step.Status)
+}
+
+func fetchLog(httpClient *http.Client, logURL string) (io.ReadCloser, error) {
 	req, err := http.NewRequest("GET", logURL, nil)
 	if err != nil {
 		return nil, err
@@ -223,7 +258,7 @@ func (ghalr *githubActionsLogReceiver) getRunLog(ctx context.Context, ghClient *
 			ghalr.logger.Error("Failed to get logs url", zap.Error(err))
 			return nil, err
 		}
-		response, err := getLog(httpClient, logURL.String())
+		response, err := fetchLog(httpClient, logURL.String())
 		defer response.Close()
 		data, err := io.ReadAll(response)
 		respReader := bytes.NewReader(data)
@@ -270,32 +305,6 @@ func attachRunLog(rlz *zip.Reader, jobs []Job) {
 	}
 }
 
-func mapJob(job *github.WorkflowJob) Job {
-	steps := make([]Step, len(job.Steps))
-	for _, s := range job.Steps {
-		steps = append(steps, Step{
-			Name:        *s.Name,
-			Status:      Status(*s.Status),
-			Conclusion:  Conclusion(*s.Conclusion),
-			Number:      int(*s.Number),
-			StartedAt:   s.GetStartedAt().Time,
-			CompletedAt: s.GetCompletedAt().Time,
-		})
-	}
-	Steps(steps).Sort()
-	return Job{
-		ID:          job.GetID(),
-		Status:      Status(job.GetStatus()),
-		Conclusion:  Conclusion(job.GetConclusion()),
-		Name:        job.GetName(),
-		StartedAt:   job.GetStartedAt().Time,
-		CompletedAt: job.GetCompletedAt().Time,
-		URL:         job.GetHTMLURL(),
-		RunID:       job.GetRunID(),
-		Steps:       steps,
-	}
-}
-
 // Copied from https://github.com/cli/cli/blob/b54f7a3bde50df3c31fdd68b638a0c0378a0ad58/pkg/cmd/run/view/view.go#L493
 // to handle the case where the job or step name in the zip file is different from the job or step name in the object
 func logFilenameRegexp(job Job, step Step) *regexp.Regexp {
@@ -313,4 +322,42 @@ func logFilenameRegexp(job Job, step Step) *regexp.Regexp {
 	sanitizedJobName := strings.ReplaceAll(job.Name, "/", "")
 	re := fmt.Sprintf(`%s\/%d_.*\.txt`, regexp.QuoteMeta(sanitizedJobName), step.Number)
 	return regexp.MustCompile(re)
+}
+
+// generateTraceID generates a trace ID from the run ID and run attempt
+// Copied from https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/b45f1739c29039a0314b9c97c3ccc578562df36f/receiver/githubactionsreceiver/trace_event_handling.go#L212
+// to be able to correlate logs with traces
+func generateTraceID(runID int64, runAttempt int) (pcommon.TraceID, error) {
+	input := fmt.Sprintf("%d%dt", runID, runAttempt)
+	hash := sha256.Sum256([]byte(input))
+	traceIDHex := hex.EncodeToString(hash[:])
+
+	var traceID pcommon.TraceID
+	_, err := hex.Decode(traceID[:], []byte(traceIDHex[:32]))
+	if err != nil {
+		return pcommon.TraceID{}, err
+	}
+
+	return traceID, nil
+}
+
+// generateStepSpanID generates a span ID from the run ID, run attempt, job name, step name and step number
+// Copied from https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/b45f1739c29039a0314b9c97c3ccc578562df36f/receiver/githubactionsreceiver/trace_event_handling.go#L262
+// to be able to correlate logs with traces
+func generateStepSpanID(runID int64, runAttempt int, jobName, stepName string, stepNumber ...int) (pcommon.SpanID, error) {
+	var input string
+	if len(stepNumber) > 0 && stepNumber[0] > 0 {
+		input = fmt.Sprintf("%d%d%s%s%d", runID, runAttempt, jobName, stepName, stepNumber[0])
+	} else {
+		input = fmt.Sprintf("%d%d%s%s", runID, runAttempt, jobName, stepName)
+	}
+	hash := sha256.Sum256([]byte(input))
+	spanIDHex := hex.EncodeToString(hash[:])
+
+	var spanID pcommon.SpanID
+	_, err := hex.Decode(spanID[:], []byte(spanIDHex[16:32]))
+	if err != nil {
+		return pcommon.SpanID{}, err
+	}
+	return spanID, nil
 }
