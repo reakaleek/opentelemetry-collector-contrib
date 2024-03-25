@@ -30,7 +30,7 @@ func createLogsReceiver(
 // NewFactory creates a factory for githubactionslogsreceiver.
 func NewFactory() receiver.Factory {
 	return receiver.NewFactory(
-		component.MustNewType("githubactionslogreceiver"),
+		component.MustNewType("githubactionslog"),
 		createDefaultConfig,
 		receiver.WithLogs(createLogsReceiver, component.StabilityLevelDevelopment),
 	)
