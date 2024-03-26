@@ -7,6 +7,12 @@ import (
 	"net/url"
 )
 
+const (
+	defaultPort            = 19418
+	defaultPath            = "/workflow-run-events"
+	defaultHealthCheckPath = "/health"
+)
+
 type Config struct {
 	confighttp.ServerConfig `mapstructure:",squash"`
 	Path                    string              `mapstructure:"path"`

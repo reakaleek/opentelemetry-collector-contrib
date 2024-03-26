@@ -9,12 +9,6 @@ import (
 	"go.opentelemetry.io/collector/receiver"
 )
 
-const (
-	defaultPort            = 19418
-	defaultPath            = "/workflow-run-events"
-	defaultHealthCheckPath = "/health"
-)
-
 func createDefaultConfig() component.Config {
 	return &Config{
 		ServerConfig: confighttp.ServerConfig{

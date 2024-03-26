@@ -6,16 +6,16 @@ import (
 	"testing"
 )
 
-func Test_Config_Validate_Success(t *testing.T) {
+func TestConfigValidateSuccess(t *testing.T) {
 	config := &githubactionslogreceiver.Config{
 		Path:        "/test",
-		GitHubToken: "fake_token",
+		GitHubToken: "faketoken",
 	}
 	err := config.Validate()
 	assert.NoError(t, err)
 }
 
-func Test_Config_Validate_Missing_GitHubToken_Should_Fail(t *testing.T) {
+func TestConfigValidateMissingGitHubTokenShouldFail(t *testing.T) {
 	config := &githubactionslogreceiver.Config{
 		Path: "/test",
 	}
@@ -23,10 +23,10 @@ func Test_Config_Validate_Missing_GitHubToken_Should_Fail(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func Test_Config_Validate_Malformed_Path_Should_Fail(t *testing.T) {
+func TestConfigValidateMalformedPathShouldFail(t *testing.T) {
 	config := &githubactionslogreceiver.Config{
 		Path:        "lol !",
-		GitHubToken: "fake_token",
+		GitHubToken: "faketoken",
 	}
 	err := config.Validate()
 	assert.ErrorContains(t, err, "path must be a valid URL")
