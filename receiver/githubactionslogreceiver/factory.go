@@ -2,18 +2,26 @@ package githubactionslogreceiver
 
 import (
 	"context"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/common/localhostgate"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/receiver"
 )
 
+const (
+	defaultPort            = 19418
+	defaultPath            = "/workflow-run-events"
+	defaultHealthCheckPath = "/health"
+)
+
 func createDefaultConfig() component.Config {
 	return &Config{
 		ServerConfig: confighttp.ServerConfig{
-			Endpoint: "0.0.0.0:19418",
+			Endpoint: localhostgate.EndpointForPort(defaultPort),
 		},
-		Path: "/workflow-run-events",
+		Path:            defaultPath,
+		HealthCheckPath: defaultHealthCheckPath,
 	}
 }
 

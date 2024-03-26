@@ -10,6 +10,7 @@ import (
 type Config struct {
 	confighttp.ServerConfig `mapstructure:",squash"`
 	Path                    string              `mapstructure:"path"`
+	HealthCheckPath         string              `mapstructure:"health_check_path"`
 	GitHubToken             configopaque.String `mapstructure:"github_token"`
 }
 

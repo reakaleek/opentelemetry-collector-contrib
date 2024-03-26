@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/go-github/v60/github"
+	"github.com/julienschmidt/httprouter"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -47,7 +48,16 @@ func newLogsReceiver(cfg *Config, logger *zap.Logger, consumer consumer.Logs) *g
 func (ghalr *githubActionsLogReceiver) Start(_ context.Context, _ component.Host) error {
 	endpoint := fmt.Sprintf("%s%s", ghalr.config.ServerConfig.Endpoint, ghalr.config.Path)
 	ghalr.logger.Info("Starting the what receiver", zap.String("endpoint", endpoint))
-	ghalr.server = &http.Server{Addr: ghalr.config.ServerConfig.Endpoint, Handler: ghalr}
+
+	router := httprouter.New()
+	router.POST(ghalr.config.Path, ghalr.handleWorkflowRun)
+	router.GET(ghalr.config.HealthCheckPath, ghalr.handleHealthCheck)
+
+	ghalr.server = &http.Server{
+		Addr:    ghalr.config.ServerConfig.Endpoint,
+		Handler: router,
+	}
+
 	ghalr.wg.Add(1)
 	go func() {
 		defer ghalr.wg.Done()
@@ -67,35 +77,34 @@ func (ghalr *githubActionsLogReceiver) Shutdown(_ context.Context) error {
 	return err
 }
 
-func (ghalr *githubActionsLogReceiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (ghalr *githubActionsLogReceiver) handleHealthCheck(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
+	w.WriteHeader(http.StatusOK)
+}
+
+func (ghalr *githubActionsLogReceiver) handleWorkflowRun(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var response GitHubWorkflowRunEvent
-	err := json.NewDecoder(req.Body).Decode(&response)
+	err := json.NewDecoder(r.Body).Decode(&response)
 	if err != nil {
 		ghalr.logger.Error("Failed to decode request", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	ghalr.logger.Info("Received a request", zap.String("path", req.URL.Path))
+	ghalr.logger.Info("Received a request", zap.String("path", r.URL.Path))
 	ghalr.logger.Debug("Request Payload", zap.Any("response", response))
-	if req.URL.Path != ghalr.config.Path {
-		ghalr.logger.Info("Received a request to an unknown path", zap.String("path", req.URL.Path))
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
 	if response.Action != "completed" {
 		ghalr.logger.Info("Skipping the request because it is no a completed workflow run")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 	ghClient := github.NewClient(nil).WithAuthToken(string(ghalr.config.GitHubToken))
-	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(req.Context(), response.Repository.GetOwner().GetLogin(), response.Repository.GetName(), response.WorkflowRun.GetID(), nil)
+	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(r.Context(), response.Repository.GetOwner().GetLogin(), response.Repository.GetName(), response.WorkflowRun.GetID(), nil)
 	if err != nil {
 		ghalr.logger.Error("Failed to get workflow Jobs", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	ghalr.logger.Info("Received Jobs", zap.Any("Jobs", workflowJobs))
-	runLogZip, err := ghalr.getRunLog(req.Context(), ghClient, http.DefaultClient, response.Repository, response.WorkflowRun)
+	runLogZip, err := ghalr.getRunLog(r.Context(), ghClient, http.DefaultClient, response.Repository, response.WorkflowRun)
 	if err != nil {
 		ghalr.logger.Error("Failed to get run log", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
@@ -112,7 +121,7 @@ func (ghalr *githubActionsLogReceiver) ServeHTTP(w http.ResponseWriter, req *htt
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	err = ghalr.consumer.ConsumeLogs(req.Context(), logs)
+	err = ghalr.consumer.ConsumeLogs(r.Context(), logs)
 	if err != nil {
 		ghalr.logger.Error("Failed to consume logs", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
