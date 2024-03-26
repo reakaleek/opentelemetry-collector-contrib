@@ -21,6 +21,9 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 		scopeLogs := scopeLogsSlice.AppendEmpty()
 		logRecords := scopeLogs.LogRecords()
 		for _, step := range job.Steps {
+			if step.Log == nil {
+				continue
+			}
 			f, err := step.Log.Open()
 			if err != nil {
 				return logs, err
