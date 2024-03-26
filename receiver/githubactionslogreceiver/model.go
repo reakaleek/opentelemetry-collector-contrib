@@ -8,8 +8,9 @@ import (
 )
 
 type LogLine struct {
-	Body      string
-	Timestamp time.Time
+	Body           string
+	Timestamp      time.Time
+	SeverityNumber int
 }
 
 type GitHubWorkflowRunEvent struct {
