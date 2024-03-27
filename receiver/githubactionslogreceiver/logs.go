@@ -31,7 +31,16 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 				}
 				defer f.Close()
 				scanner := bufio.NewScanner(f)
+				var previousLogRecord *plog.LogRecord
 				for scanner.Scan() {
+					line := scanner.Text()
+					if line == "" {
+						continue
+					}
+					if !lineHasTimestamp(line) {
+						appendBody(previousLogRecord, line)
+						continue
+					}
 					logRecord := logRecords.AppendEmpty()
 					logLine, err := parseLogLine(scanner.Text())
 					if err != nil {
@@ -40,6 +49,7 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 					if err := attachData(&logRecord, repository, run, job, step, logLine); err != nil {
 						return fmt.Errorf("failed to attach data to log record: %w", err)
 					}
+					previousLogRecord = &logRecord
 				}
 				return nil
 			}(); err != nil {
@@ -48,6 +58,10 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 		}
 	}
 	return logs, nil
+}
+
+func appendBody(logRecord *plog.LogRecord, line string) {
+	logRecord.Body().SetStr(logRecord.Body().Str() + "\n" + line)
 }
 
 func attachData(logRecord *plog.LogRecord, repository Repository, run Run, job Job, step Step, logLine LogLine) error {
@@ -66,6 +80,15 @@ func attachData(logRecord *plog.LogRecord, repository Repository, run Run, job J
 	attachJobAttributes(logRecord, job)
 	attachStepAttributes(logRecord, step)
 	return nil
+}
+
+func lineHasTimestamp(line string) bool {
+	if line == "" {
+		return false
+	}
+	parts := strings.SplitN(line, " ", 2)
+	_, err := time.Parse(time.RFC3339Nano, parts[0])
+	return err == nil
 }
 
 // parseLogLine parses a log line from the GitHub Actions log file
