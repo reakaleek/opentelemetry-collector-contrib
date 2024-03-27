@@ -90,6 +90,7 @@ func (ghalr *githubActionsLogReceiver) handleWorkflowRun(w http.ResponseWriter, 
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	ghalr.logger.Info("Received a completed workflow run", zap.String("workflow_run url:", *response.WorkflowRun.URL))
 	ghClient := github.NewClient(nil).WithAuthToken(string(ghalr.config.GitHubToken))
 	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(r.Context(), response.Repository.GetOwner().GetLogin(), response.Repository.GetName(), response.WorkflowRun.GetID(), nil)
 	if err != nil {

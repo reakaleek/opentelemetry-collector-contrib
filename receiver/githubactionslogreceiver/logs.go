@@ -24,20 +24,26 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 			if step.Log == nil {
 				continue
 			}
-			f, err := step.Log.Open()
-			if err != nil {
-				return logs, err
-			}
-			scanner := bufio.NewScanner(f)
-			for scanner.Scan() {
-				logRecord := logRecords.AppendEmpty()
-				logLine, err := parseLogLine(scanner.Text())
+			if err := func() error {
+				f, err := step.Log.Open()
 				if err != nil {
-					return logs, fmt.Errorf("failed to parse log line: %w", err)
+					return err
 				}
-				if err := attachData(&logRecord, repository, run, job, step, logLine); err != nil {
-					return logs, fmt.Errorf("failed to attach data to log record: %w", err)
+				defer f.Close()
+				scanner := bufio.NewScanner(f)
+				for scanner.Scan() {
+					logRecord := logRecords.AppendEmpty()
+					logLine, err := parseLogLine(scanner.Text())
+					if err != nil {
+						return fmt.Errorf("failed to parse log line: %w", err)
+					}
+					if err := attachData(&logRecord, repository, run, job, step, logLine); err != nil {
+						return fmt.Errorf("failed to attach data to log record: %w", err)
+					}
 				}
+				return nil
+			}(); err != nil {
+				return logs, err
 			}
 		}
 	}
