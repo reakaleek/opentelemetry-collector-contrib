@@ -199,3 +199,305 @@ func TestToLogs(t *testing.T) {
 	assert.Equal(t, pcommon.NewTimestampFromTime(logLine.Timestamp), logRecords.At(0).Timestamp())
 	assert.NoError(t, err)
 }
+
+func TestToLogsMultipleLogLines(t *testing.T) {
+	// arrange
+	repository := Repository{FullName: "owner/repo"}
+	run := Run{
+		ID:           1,
+		Name:         "Run Name",
+		RunAttempt:   1,
+		RunNumber:    1,
+		RunStartedAt: time.Now(),
+		URL:          "https://example.com",
+		Status:       "complete",
+		Conclusion:   "success",
+	}
+	buf := new(bytes.Buffer)
+	writer := zip.NewWriter(buf)
+	content := `2021-10-01T00:00:00Z Some message
+2021-10-01T00:00:01Z Another message
+2021-10-01T00:00:02Z Yet another message`
+	func() {
+		defer writer.Close()
+		file, err := writer.Create("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = file.Write([]byte(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+	reader := bytes.NewReader(buf.Bytes())
+	zipReader, err := zip.NewReader(reader, int64(len(buf.Bytes())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := []Job{
+		{
+			ID:          1,
+			Name:        "Job Name",
+			Status:      "complete",
+			Conclusion:  "success",
+			StartedAt:   time.Now(),
+			CompletedAt: time.Now(),
+			URL:         "https://example.com",
+			RunID:       1,
+			Steps: Steps{
+				{
+					Name:        "Step Name",
+					Status:      "complete",
+					StartedAt:   time.Now(),
+					CompletedAt: time.Now(),
+					Conclusion:  "success",
+					Number:      1,
+					Log:         zipReader.File[0],
+				},
+			},
+		},
+	}
+
+	// act
+	logs, err := toLogs(repository, run, jobs)
+
+	// assert
+	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, 3, logs.LogRecordCount())
+	assert.Equal(t, "Some message", logRecords.At(0).Body().Str())
+	assert.Equal(t, "Another message", logRecords.At(1).Body().Str())
+	assert.Equal(t, "Yet another message", logRecords.At(2).Body().Str())
+	assert.NoError(t, err)
+}
+
+func TestToLogsMultineLogWithEmptyLine(t *testing.T) {
+	// arrange
+	repository := Repository{FullName: "owner/repo"}
+	run := Run{
+		ID:           1,
+		Name:         "Run Name",
+		RunAttempt:   1,
+		RunNumber:    1,
+		RunStartedAt: time.Now(),
+		URL:          "https://example.com",
+		Status:       "complete",
+		Conclusion:   "success",
+	}
+	buf := new(bytes.Buffer)
+	writer := zip.NewWriter(buf)
+	content := `2021-10-01T00:00:00Z Some message
+2021-10-01T00:00:01Z Another message
+
+2021-10-01T00:00:02Z Yet another message
+`
+	func() {
+		defer writer.Close()
+		file, err := writer.Create("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = file.Write([]byte(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+	reader := bytes.NewReader(buf.Bytes())
+	zipReader, err := zip.NewReader(reader, int64(len(buf.Bytes())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := []Job{
+		{
+			ID:          1,
+			Name:        "Job Name",
+			Status:      "complete",
+			Conclusion:  "success",
+			StartedAt:   time.Now(),
+			CompletedAt: time.Now(),
+			URL:         "https://example.com",
+			RunID:       1,
+			Steps: Steps{
+				{
+					Name:        "Step Name",
+					Status:      "complete",
+					StartedAt:   time.Now(),
+					CompletedAt: time.Now(),
+					Conclusion:  "success",
+					Number:      1,
+					Log:         zipReader.File[0],
+				},
+			},
+		},
+	}
+
+	// act
+	logs, err := toLogs(repository, run, jobs)
+
+	// assert
+	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, 3, logs.LogRecordCount())
+	assert.Equal(t, "Some message", logRecords.At(0).Body().Str())
+	assert.Equal(t, "Another message", logRecords.At(1).Body().Str())
+	assert.Equal(t, "Yet another message", logRecords.At(2).Body().Str())
+	assert.NoError(t, err)
+}
+
+func TestToLogsMultLineLog(t *testing.T) {
+	// arrange
+	repository := Repository{FullName: "owner/repo"}
+	run := Run{
+		ID:           1,
+		Name:         "Run Name",
+		RunAttempt:   1,
+		RunNumber:    1,
+		RunStartedAt: time.Now(),
+		URL:          "https://example.com",
+		Status:       "complete",
+		Conclusion:   "success",
+	}
+	buf := new(bytes.Buffer)
+	writer := zip.NewWriter(buf)
+	content := `2021-10-01T00:00:00Z Some message
+2021-10-01T00:00:01Z Another message
+Gibberish
+Foo Bar
+
+2021-10-01T00:00:02Z Yet another message
+`
+	func() {
+		defer writer.Close()
+		file, err := writer.Create("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = file.Write([]byte(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+	reader := bytes.NewReader(buf.Bytes())
+	zipReader, err := zip.NewReader(reader, int64(len(buf.Bytes())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := []Job{
+		{
+			ID:          1,
+			Name:        "Job Name",
+			Status:      "complete",
+			Conclusion:  "success",
+			StartedAt:   time.Now(),
+			CompletedAt: time.Now(),
+			URL:         "https://example.com",
+			RunID:       1,
+			Steps: Steps{
+				{
+					Name:        "Step Name",
+					Status:      "complete",
+					StartedAt:   time.Now(),
+					CompletedAt: time.Now(),
+					Conclusion:  "success",
+					Number:      1,
+					Log:         zipReader.File[0],
+				},
+			},
+		},
+	}
+
+	// act
+	logs, err := toLogs(repository, run, jobs)
+
+	// assert
+	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, 3, logs.LogRecordCount())
+	assert.Equal(t, "Some message", logRecords.At(0).Body().Str())
+	assert.Equal(t, "Another message\nGibberish\nFoo Bar", logRecords.At(1).Body().Str())
+	assert.Equal(t, "Yet another message", logRecords.At(2).Body().Str())
+	assert.NoError(t, err)
+}
+
+func TestToLogsStartingWithEmptyLines(t *testing.T) {
+	// arrange
+	repository := Repository{FullName: "owner/repo"}
+	run := Run{
+		ID:           1,
+		Name:         "Run Name",
+		RunAttempt:   1,
+		RunNumber:    1,
+		RunStartedAt: time.Now(),
+		URL:          "https://example.com",
+		Status:       "complete",
+		Conclusion:   "success",
+	}
+	buf := new(bytes.Buffer)
+	writer := zip.NewWriter(buf)
+	content := `
+
+
+2021-10-01T00:00:00Z Some message
+2021-10-01T00:00:01Z Another message
+2021-10-01T00:00:02Z Yet another message
+`
+	func() {
+		defer writer.Close()
+		file, err := writer.Create("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = file.Write([]byte(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+	reader := bytes.NewReader(buf.Bytes())
+	zipReader, err := zip.NewReader(reader, int64(len(buf.Bytes())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := []Job{
+		{
+			ID:          1,
+			Name:        "Job Name",
+			Status:      "complete",
+			Conclusion:  "success",
+			StartedAt:   time.Now(),
+			CompletedAt: time.Now(),
+			URL:         "https://example.com",
+			RunID:       1,
+			Steps: Steps{
+				{
+					Name:        "Step Name",
+					Status:      "complete",
+					StartedAt:   time.Now(),
+					CompletedAt: time.Now(),
+					Conclusion:  "success",
+					Number:      1,
+					Log:         zipReader.File[0],
+				},
+			},
+		},
+	}
+
+	// act
+	logs, err := toLogs(repository, run, jobs)
+
+	// assert
+	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, 3, logs.LogRecordCount())
+	assert.Equal(t, "Some message", logRecords.At(0).Body().Str())
+	assert.Equal(t, "Another message", logRecords.At(1).Body().Str())
+	assert.Equal(t, "Yet another message", logRecords.At(2).Body().Str())
+	assert.NoError(t, err)
+}
