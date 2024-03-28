@@ -37,8 +37,10 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 					if line == "" {
 						continue
 					}
-					if !lineHasTimestamp(line) {
-						appendBody(previousLogRecord, line)
+					if !startsWithTimestamp(line) {
+						if previousLogRecord != nil {
+							appendLineToLogRecordBody(previousLogRecord, line)
+						}
 						continue
 					}
 					logRecord := logRecords.AppendEmpty()
@@ -60,7 +62,7 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 	return logs, nil
 }
 
-func appendBody(logRecord *plog.LogRecord, line string) {
+func appendLineToLogRecordBody(logRecord *plog.LogRecord, line string) {
 	logRecord.Body().SetStr(logRecord.Body().Str() + "\n" + line)
 }
 
@@ -82,7 +84,7 @@ func attachData(logRecord *plog.LogRecord, repository Repository, run Run, job J
 	return nil
 }
 
-func lineHasTimestamp(line string) bool {
+func startsWithTimestamp(line string) bool {
 	if line == "" {
 		return false
 	}
