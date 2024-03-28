@@ -34,6 +34,8 @@ type Run struct {
 	Status       string
 	Conclusion   string
 	Event        string
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type Job struct {
@@ -80,15 +82,14 @@ func mapJob(job *github.WorkflowJob) Job {
 	steps := make([]Step, len(job.Steps))
 	for _, s := range job.Steps {
 		steps = append(steps, Step{
-			Name:        *s.Name,
-			Status:      *s.Status,
-			Conclusion:  *s.Conclusion,
-			Number:      *s.Number,
+			Name:        s.GetName(),
+			Status:      s.GetStatus(),
+			Conclusion:  s.GetConclusion(),
+			Number:      s.GetNumber(),
 			StartedAt:   s.GetStartedAt().Time,
 			CompletedAt: s.GetCompletedAt().Time,
 		})
 	}
-	Steps(steps).Sort()
 	return Job{
 		ID:          job.GetID(),
 		Status:      job.GetStatus(),
@@ -113,6 +114,8 @@ func mapRun(run *github.WorkflowRun) Run {
 		Conclusion:   run.GetConclusion(),
 		RunStartedAt: run.GetRunStartedAt().Time,
 		Event:        run.GetEvent(),
+		CreatedAt:    run.GetCreatedAt().Time,
+		UpdatedAt:    run.GetUpdatedAt().Time,
 	}
 }
 

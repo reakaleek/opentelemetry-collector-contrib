@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-func assertAttributeEquals(t *testing.T, attributes pcommon.Map, key string, want interface{}) {
-	got, _ := attributes.Get(key)
-	assert.Equal(t, got, want)
+func assertAttributeEquals(t *testing.T, attributes pcommon.Map, key string, expected pcommon.Value) {
+	actual, _ := attributes.Get(key)
+	assert.Equal(t, expected, actual)
 }
 
 func TestAttachRunAttributes(t *testing.T) {
@@ -26,12 +26,14 @@ func TestAttachRunAttributes(t *testing.T) {
 		Status:       "complete",
 		Conclusion:   "success",
 		Event:        "push",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now().Add(time.Duration(60)),
 	}
 
 	logRecord := plog.NewLogRecord()
 
 	attachRunAttributes(&logRecord, run)
-	assert.Equal(t, 9, logRecord.Attributes().Len())
+	assert.Equal(t, 11, logRecord.Attributes().Len())
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.id", pcommon.NewValueInt(1))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.name", pcommon.NewValueStr("Run Name"))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.run_attempt", pcommon.NewValueInt(1))
@@ -40,6 +42,8 @@ func TestAttachRunAttributes(t *testing.T) {
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.conclusion", pcommon.NewValueStr("success"))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.status", pcommon.NewValueStr("complete"))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.event", pcommon.NewValueStr("push"))
+	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.created_at", pcommon.NewValueStr(pcommon.NewTimestampFromTime(run.CreatedAt).String()))
+	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.updated_at", pcommon.NewValueStr(pcommon.NewTimestampFromTime(run.UpdatedAt).String()))
 }
 
 func TestAttachJobAttributes(t *testing.T) {
@@ -145,9 +149,9 @@ func TestToLogs(t *testing.T) {
 		Conclusion:   "success",
 	}
 	buf := new(bytes.Buffer)
-	writer := zip.NewWriter(buf)
 	line := "2021-10-01T00:00:00Z Some message"
 	func() {
+		writer := zip.NewWriter(buf)
 		defer writer.Close()
 		file, err := writer.Create("")
 		if err != nil {
@@ -216,11 +220,11 @@ func TestToLogsMultipleLogLines(t *testing.T) {
 		Conclusion:   "success",
 	}
 	buf := new(bytes.Buffer)
-	writer := zip.NewWriter(buf)
 	content := `2021-10-01T00:00:00Z Some message
 2021-10-01T00:00:01Z Another message
 2021-10-01T00:00:02Z Yet another message`
 	func() {
+		writer := zip.NewWriter(buf)
 		defer writer.Close()
 		file, err := writer.Create("")
 		if err != nil {
@@ -289,13 +293,13 @@ func TestToLogsMultineLogWithEmptyLine(t *testing.T) {
 		Conclusion:   "success",
 	}
 	buf := new(bytes.Buffer)
-	writer := zip.NewWriter(buf)
 	content := `2021-10-01T00:00:00Z Some message
 2021-10-01T00:00:01Z Another message
 
 2021-10-01T00:00:02Z Yet another message
 `
 	func() {
+		writer := zip.NewWriter(buf)
 		defer writer.Close()
 		file, err := writer.Create("")
 		if err != nil {
@@ -364,7 +368,6 @@ func TestToLogsMultLineLog(t *testing.T) {
 		Conclusion:   "success",
 	}
 	buf := new(bytes.Buffer)
-	writer := zip.NewWriter(buf)
 	content := `2021-10-01T00:00:00Z Some message
 2021-10-01T00:00:01Z Another message
 Gibberish
@@ -373,6 +376,7 @@ Foo Bar
 2021-10-01T00:00:02Z Yet another message
 `
 	func() {
+		writer := zip.NewWriter(buf)
 		defer writer.Close()
 		file, err := writer.Create("")
 		if err != nil {
@@ -441,7 +445,6 @@ func TestToLogsStartingWithEmptyLines(t *testing.T) {
 		Conclusion:   "success",
 	}
 	buf := new(bytes.Buffer)
-	writer := zip.NewWriter(buf)
 	content := `
 
 
@@ -450,6 +453,7 @@ func TestToLogsStartingWithEmptyLines(t *testing.T) {
 2021-10-01T00:00:02Z Yet another message
 `
 	func() {
+		writer := zip.NewWriter(buf)
 		defer writer.Close()
 		file, err := writer.Create("")
 		if err != nil {
