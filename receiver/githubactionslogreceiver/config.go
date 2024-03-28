@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultPort            = 19418
+	defaultPort            = 19419
 	defaultPath            = "/workflow-run-events"
 	defaultHealthCheckPath = "/health"
 )
