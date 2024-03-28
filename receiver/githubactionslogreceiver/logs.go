@@ -19,6 +19,7 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 	for _, job := range jobs {
 		scopeLogsSlice := logs.ResourceLogs().AppendEmpty().ScopeLogs()
 		scopeLogs := scopeLogsSlice.AppendEmpty()
+		scopeLogs.Scope().SetName("github-actions")
 		logRecords := scopeLogs.LogRecords()
 		for _, step := range job.Steps {
 			if step.Log == nil {
@@ -55,7 +56,7 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 				}
 				return nil
 			}(); err != nil {
-				return logs, err
+				return plog.Logs{}, err
 			}
 		}
 	}
@@ -88,8 +89,8 @@ func startsWithTimestamp(line string) bool {
 	if line == "" {
 		return false
 	}
-	parts := strings.SplitN(line, " ", 2)
-	_, err := time.Parse(time.RFC3339Nano, parts[0])
+	fields := strings.Fields(line)
+	_, err := time.Parse(time.RFC3339Nano, fields[0])
 	return err == nil
 }
 
