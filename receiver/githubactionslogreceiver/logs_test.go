@@ -137,23 +137,12 @@ func TestParseLogErr(t *testing.T) {
 
 func TestToLogs(t *testing.T) {
 	// arrange
-	repository := Repository{FullName: "owner/repo"}
-	run := Run{
-		ID:           1,
-		Name:         "Run Name",
-		RunAttempt:   1,
-		RunNumber:    1,
-		RunStartedAt: time.Now(),
-		URL:          "https://example.com",
-		Status:       "complete",
-		Conclusion:   "success",
-	}
 	buf := new(bytes.Buffer)
 	line := "2021-10-01T00:00:00Z Some message"
 	func() {
 		writer := zip.NewWriter(buf)
 		defer writer.Close()
-		file, err := writer.Create("")
+		file, err := writer.Create("file.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -169,30 +158,16 @@ func TestToLogs(t *testing.T) {
 	}
 	jobs := []Job{
 		{
-			ID:          1,
-			Name:        "Job Name",
-			Status:      "complete",
-			Conclusion:  "success",
-			StartedAt:   time.Now(),
-			CompletedAt: time.Now(),
-			URL:         "https://example.com",
-			RunID:       1,
 			Steps: Steps{
 				{
-					Name:        "Step Name",
-					Status:      "complete",
-					StartedAt:   time.Now(),
-					CompletedAt: time.Now(),
-					Conclusion:  "success",
-					Number:      1,
-					Log:         zipReader.File[0],
+					Log: zipReader.File[0],
 				},
 			},
 		},
 	}
 
 	// act
-	logs, err := toLogs(repository, run, jobs)
+	logs, err := toLogs(Repository{}, Run{}, jobs)
 
 	// assert
 	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
@@ -208,17 +183,6 @@ func TestToLogs(t *testing.T) {
 
 func TestToLogsMultipleLogLines(t *testing.T) {
 	// arrange
-	repository := Repository{FullName: "owner/repo"}
-	run := Run{
-		ID:           1,
-		Name:         "Run Name",
-		RunAttempt:   1,
-		RunNumber:    1,
-		RunStartedAt: time.Now(),
-		URL:          "https://example.com",
-		Status:       "complete",
-		Conclusion:   "success",
-	}
 	buf := new(bytes.Buffer)
 	content := `2021-10-01T00:00:00Z Some message
 2021-10-01T00:00:01Z Another message
@@ -226,7 +190,7 @@ func TestToLogsMultipleLogLines(t *testing.T) {
 	func() {
 		writer := zip.NewWriter(buf)
 		defer writer.Close()
-		file, err := writer.Create("")
+		file, err := writer.Create("file.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -242,30 +206,16 @@ func TestToLogsMultipleLogLines(t *testing.T) {
 	}
 	jobs := []Job{
 		{
-			ID:          1,
-			Name:        "Job Name",
-			Status:      "complete",
-			Conclusion:  "success",
-			StartedAt:   time.Now(),
-			CompletedAt: time.Now(),
-			URL:         "https://example.com",
-			RunID:       1,
 			Steps: Steps{
 				{
-					Name:        "Step Name",
-					Status:      "complete",
-					StartedAt:   time.Now(),
-					CompletedAt: time.Now(),
-					Conclusion:  "success",
-					Number:      1,
-					Log:         zipReader.File[0],
+					Log: zipReader.File[0],
 				},
 			},
 		},
 	}
 
 	// act
-	logs, err := toLogs(repository, run, jobs)
+	logs, err := toLogs(Repository{}, Run{}, jobs)
 
 	// assert
 	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
@@ -281,17 +231,6 @@ func TestToLogsMultipleLogLines(t *testing.T) {
 
 func TestToLogsMultineLogWithEmptyLine(t *testing.T) {
 	// arrange
-	repository := Repository{FullName: "owner/repo"}
-	run := Run{
-		ID:           1,
-		Name:         "Run Name",
-		RunAttempt:   1,
-		RunNumber:    1,
-		RunStartedAt: time.Now(),
-		URL:          "https://example.com",
-		Status:       "complete",
-		Conclusion:   "success",
-	}
 	buf := new(bytes.Buffer)
 	content := `2021-10-01T00:00:00Z Some message
 2021-10-01T00:00:01Z Another message
@@ -301,7 +240,7 @@ func TestToLogsMultineLogWithEmptyLine(t *testing.T) {
 	func() {
 		writer := zip.NewWriter(buf)
 		defer writer.Close()
-		file, err := writer.Create("")
+		file, err := writer.Create("file.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -317,30 +256,16 @@ func TestToLogsMultineLogWithEmptyLine(t *testing.T) {
 	}
 	jobs := []Job{
 		{
-			ID:          1,
-			Name:        "Job Name",
-			Status:      "complete",
-			Conclusion:  "success",
-			StartedAt:   time.Now(),
-			CompletedAt: time.Now(),
-			URL:         "https://example.com",
-			RunID:       1,
 			Steps: Steps{
 				{
-					Name:        "Step Name",
-					Status:      "complete",
-					StartedAt:   time.Now(),
-					CompletedAt: time.Now(),
-					Conclusion:  "success",
-					Number:      1,
-					Log:         zipReader.File[0],
+					Log: zipReader.File[0],
 				},
 			},
 		},
 	}
 
 	// act
-	logs, err := toLogs(repository, run, jobs)
+	logs, err := toLogs(Repository{}, Run{}, jobs)
 
 	// assert
 	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
@@ -356,17 +281,6 @@ func TestToLogsMultineLogWithEmptyLine(t *testing.T) {
 
 func TestToLogsMultLineLog(t *testing.T) {
 	// arrange
-	repository := Repository{FullName: "owner/repo"}
-	run := Run{
-		ID:           1,
-		Name:         "Run Name",
-		RunAttempt:   1,
-		RunNumber:    1,
-		RunStartedAt: time.Now(),
-		URL:          "https://example.com",
-		Status:       "complete",
-		Conclusion:   "success",
-	}
 	buf := new(bytes.Buffer)
 	content := `2021-10-01T00:00:00Z Some message
 2021-10-01T00:00:01Z Another message
@@ -378,7 +292,7 @@ Foo Bar
 	func() {
 		writer := zip.NewWriter(buf)
 		defer writer.Close()
-		file, err := writer.Create("")
+		file, err := writer.Create("file.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -394,30 +308,16 @@ Foo Bar
 	}
 	jobs := []Job{
 		{
-			ID:          1,
-			Name:        "Job Name",
-			Status:      "complete",
-			Conclusion:  "success",
-			StartedAt:   time.Now(),
-			CompletedAt: time.Now(),
-			URL:         "https://example.com",
-			RunID:       1,
 			Steps: Steps{
 				{
-					Name:        "Step Name",
-					Status:      "complete",
-					StartedAt:   time.Now(),
-					CompletedAt: time.Now(),
-					Conclusion:  "success",
-					Number:      1,
-					Log:         zipReader.File[0],
+					Log: zipReader.File[0],
 				},
 			},
 		},
 	}
 
 	// act
-	logs, err := toLogs(repository, run, jobs)
+	logs, err := toLogs(Repository{}, Run{}, jobs)
 
 	// assert
 	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
@@ -433,17 +333,6 @@ Foo Bar
 
 func TestToLogsStartingWithEmptyLines(t *testing.T) {
 	// arrange
-	repository := Repository{FullName: "owner/repo"}
-	run := Run{
-		ID:           1,
-		Name:         "Run Name",
-		RunAttempt:   1,
-		RunNumber:    1,
-		RunStartedAt: time.Now(),
-		URL:          "https://example.com",
-		Status:       "complete",
-		Conclusion:   "success",
-	}
 	buf := new(bytes.Buffer)
 	content := `
 
@@ -455,7 +344,7 @@ func TestToLogsStartingWithEmptyLines(t *testing.T) {
 	func() {
 		writer := zip.NewWriter(buf)
 		defer writer.Close()
-		file, err := writer.Create("")
+		file, err := writer.Create("file.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -471,30 +360,16 @@ func TestToLogsStartingWithEmptyLines(t *testing.T) {
 	}
 	jobs := []Job{
 		{
-			ID:          1,
-			Name:        "Job Name",
-			Status:      "complete",
-			Conclusion:  "success",
-			StartedAt:   time.Now(),
-			CompletedAt: time.Now(),
-			URL:         "https://example.com",
-			RunID:       1,
 			Steps: Steps{
 				{
-					Name:        "Step Name",
-					Status:      "complete",
-					StartedAt:   time.Now(),
-					CompletedAt: time.Now(),
-					Conclusion:  "success",
-					Number:      1,
-					Log:         zipReader.File[0],
+					Log: zipReader.File[0],
 				},
 			},
 		},
 	}
 
 	// act
-	logs, err := toLogs(repository, run, jobs)
+	logs, err := toLogs(Repository{}, Run{}, jobs)
 
 	// assert
 	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
