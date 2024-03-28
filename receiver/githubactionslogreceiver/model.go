@@ -33,6 +33,7 @@ type Run struct {
 	URL          string    `json:"html_url"`
 	Status       string
 	Conclusion   string
+	Event        string
 }
 
 type Job struct {
@@ -111,6 +112,7 @@ func mapRun(run *github.WorkflowRun) Run {
 		Status:       run.GetStatus(),
 		Conclusion:   run.GetConclusion(),
 		RunStartedAt: run.GetRunStartedAt().Time,
+		Event:        run.GetEvent(),
 	}
 }
 

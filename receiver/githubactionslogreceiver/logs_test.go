@@ -25,12 +25,13 @@ func TestAttachRunAttributes(t *testing.T) {
 		URL:          "https://example.com",
 		Status:       "complete",
 		Conclusion:   "success",
+		Event:        "push",
 	}
 
 	logRecord := plog.NewLogRecord()
 
 	attachRunAttributes(&logRecord, run)
-	assert.Equal(t, 8, logRecord.Attributes().Len())
+	assert.Equal(t, 9, logRecord.Attributes().Len())
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.id", pcommon.NewValueInt(1))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.name", pcommon.NewValueStr("Run Name"))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.run_attempt", pcommon.NewValueInt(1))
@@ -38,6 +39,7 @@ func TestAttachRunAttributes(t *testing.T) {
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.url", pcommon.NewValueStr("https://example.com/attempts/1"))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.conclusion", pcommon.NewValueStr("success"))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.status", pcommon.NewValueStr("complete"))
+	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.event", pcommon.NewValueStr("push"))
 }
 
 func TestAttachJobAttributes(t *testing.T) {

@@ -138,6 +138,7 @@ func attachRunAttributes(logRecord *plog.LogRecord, run Run) {
 	logRecord.Attributes().PutStr("github.workflow_run.conclusion", run.Conclusion)
 	logRecord.Attributes().PutStr("github.workflow_run.status", run.Status)
 	logRecord.Attributes().PutStr("github.workflow_run.run_started_at", pcommon.NewTimestampFromTime(run.RunStartedAt).String())
+	logRecord.Attributes().PutStr("github.workflow_run.event", run.Event)
 }
 
 func attachJobAttributes(logRecord *plog.LogRecord, job Job) {
