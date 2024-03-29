@@ -13,13 +13,6 @@ type LogLine struct {
 	SeverityNumber int
 }
 
-type GitHubWorkflowRunEvent struct {
-	Action      string
-	Repository  github.Repository
-	WorkflowRun github.WorkflowRun `json:"workflow_run"`
-	Workflow    github.Workflow
-}
-
 type Repository struct {
 	FullName string
 }

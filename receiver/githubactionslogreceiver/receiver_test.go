@@ -6,6 +6,7 @@ import (
 	"github.com/h2non/gock"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/consumer/consumertest"
+	"go.opentelemetry.io/collector/receiver/receivertest"
 	"go.uber.org/zap/zaptest"
 	"net/http"
 	"net/http/httptest"
@@ -143,6 +144,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", workflowRunReader)
 	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("X-GitHub-Event", "workflow_run")
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		ghalr.handleWorkflowRun(w, r, nil)
 	})
@@ -155,6 +157,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 }
 
 func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
+	// arrange
 	ghalr := githubActionsLogReceiver{
 		logger: zaptest.NewLogger(t),
 		config: &Config{
@@ -168,6 +171,7 @@ func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", workflowRunReader)
 	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("X-GitHub-Event", "workflow_run")
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		ghalr.handleWorkflowRun(w, r, nil)
 	})
@@ -187,6 +191,7 @@ func TestStartAndShutDown(t *testing.T) {
 			Path:            defaultPath,
 			HealthCheckPath: defaultHealthCheckPath,
 		},
+		settings: receivertest.NewNopCreateSettings(),
 	}
 	err := ghalr.Shutdown(nil)
 	assert.NoError(t, err)
