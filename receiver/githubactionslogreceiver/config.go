@@ -9,7 +9,7 @@ import (
 
 const (
 	defaultPort            = 19419
-	defaultPath            = "/workflow-run-events"
+	defaultPath            = "/events"
 	defaultHealthCheckPath = "/health"
 )
 
@@ -18,6 +18,7 @@ type Config struct {
 	Path                    string              `mapstructure:"path"`
 	HealthCheckPath         string              `mapstructure:"health_check_path"`
 	GitHubToken             configopaque.String `mapstructure:"github_token"`
+	WebhookSecret           configopaque.String `mapstructure:"webhook_secret"`
 }
 
 // Validate checks if the receiver configuration is valid
@@ -29,5 +30,6 @@ func (cfg *Config) Validate() error {
 	if cfg.GitHubToken == "" {
 		return fmt.Errorf("github_token must be set. See https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens for more information on how to create a token")
 	}
+
 	return nil
 }

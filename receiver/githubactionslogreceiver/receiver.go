@@ -4,13 +4,13 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/google/go-github/v60/github"
 	"github.com/julienschmidt/httprouter"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/receiver"
 	"go.uber.org/zap"
 	"io"
 	"net/http"
@@ -28,35 +28,40 @@ type githubActionsLogReceiver struct {
 	runLogCache runLogCache
 	server      *http.Server
 	wg          sync.WaitGroup
+	settings    receiver.CreateSettings
 }
 
-func newLogsReceiver(cfg *Config, logger *zap.Logger, consumer consumer.Logs) *githubActionsLogReceiver {
+func newLogsReceiver(cfg *Config, params receiver.CreateSettings, consumer consumer.Logs) *githubActionsLogReceiver {
 	return &githubActionsLogReceiver{
 		config:      cfg,
-		logger:      logger,
+		logger:      params.Logger,
 		runLogCache: rlc{},
 		consumer:    consumer,
+		settings:    params,
 	}
 }
 
-func (ghalr *githubActionsLogReceiver) Start(_ context.Context, _ component.Host) error {
+func (ghalr *githubActionsLogReceiver) Start(_ context.Context, host component.Host) error {
+	var err error
 	endpoint := fmt.Sprintf("%s%s", ghalr.config.ServerConfig.Endpoint, ghalr.config.Path)
-	ghalr.logger.Info("Starting the what receiver", zap.String("endpoint", endpoint))
-
+	ghalr.logger.Info("Starting receiver", zap.String("endpoint", endpoint))
+	listener, err := ghalr.config.ServerConfig.ToListener()
+	if err != nil {
+		return err
+	}
 	router := httprouter.New()
 	router.POST(ghalr.config.Path, ghalr.handleWorkflowRun)
 	router.GET(ghalr.config.HealthCheckPath, ghalr.handleHealthCheck)
-
-	ghalr.server = &http.Server{
-		Addr:    ghalr.config.ServerConfig.Endpoint,
-		Handler: router,
+	ghalr.server, err = ghalr.config.ServerConfig.ToServer(host, ghalr.settings.TelemetrySettings, router)
+	if err != nil {
+		return err
 	}
-
 	ghalr.wg.Add(1)
 	go func() {
 		defer ghalr.wg.Done()
-		if err := ghalr.server.ListenAndServe(); errors.Is(err, http.ErrServerClosed) {
+		if err := ghalr.server.Serve(listener); errors.Is(err, http.ErrServerClosed) {
 			ghalr.logger.Error("Receiver server has been shutdown", zap.Error(err))
+			ghalr.settings.TelemetrySettings.ReportStatus(component.NewFatalErrorEvent(err))
 		}
 	}()
 	return nil
@@ -76,36 +81,53 @@ func (ghalr *githubActionsLogReceiver) handleHealthCheck(w http.ResponseWriter, 
 }
 
 func (ghalr *githubActionsLogReceiver) handleWorkflowRun(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	var response GitHubWorkflowRunEvent
-	err := json.NewDecoder(r.Body).Decode(&response)
+	var payload []byte
+	var err error
+	if ghalr.config.WebhookSecret == "" {
+		payload, err = io.ReadAll(r.Body)
+	} else {
+		payload, err = github.ValidatePayload(r, []byte(string(ghalr.config.WebhookSecret)))
+		if err != nil {
+			ghalr.logger.Error("Invalid payload", zap.Error(err))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	}
+	event, err := github.ParseWebHook(github.WebHookType(r), payload)
 	if err != nil {
-		ghalr.logger.Error("Failed to decode request", zap.Error(err))
+		ghalr.logger.Error("Unable to parse payload", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	ghalr.logger.Info("Received a request", zap.String("path", r.URL.Path))
-	ghalr.logger.Debug("Request Payload", zap.Any("response", response))
-	if response.Action != "completed" {
+	switch event := event.(type) {
+	case *github.WorkflowRunEvent:
+		processWorkflowRunEvent(ghalr, w, r, *event)
+	default:
+		w.WriteHeader(http.StatusBadRequest)
+	}
+}
+
+func processWorkflowRunEvent(ghalr *githubActionsLogReceiver, w http.ResponseWriter, r *http.Request, event github.WorkflowRunEvent) {
+	if event.GetAction() != "completed" {
 		ghalr.logger.Info("Skipping the request because it is not a completed workflow run")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	ghalr.logger.Info("Received a completed workflow run", zap.String("workflow_run url:", *response.WorkflowRun.URL))
+	ghalr.logger.Info("Received Workflow Run Event", zap.String("url", event.GetWorkflowRun().GetHTMLURL()))
 	ghClient := github.NewClient(nil).WithAuthToken(string(ghalr.config.GitHubToken))
-	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(r.Context(), response.Repository.GetOwner().GetLogin(), response.Repository.GetName(), response.WorkflowRun.GetID(), nil)
+	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(r.Context(), event.GetRepo().GetOwner().GetLogin(), event.GetRepo().GetName(), event.GetWorkflowRun().GetID(), nil)
 	if err != nil {
 		ghalr.logger.Error("Failed to get workflow Jobs", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	ghalr.logger.Info("Received Jobs", zap.Any("Jobs", workflowJobs))
 	runLogZip, err := getRunLog(
 		ghalr.runLogCache,
 		ghalr.logger,
 		r.Context(), ghClient,
 		http.DefaultClient,
-		response.Repository,
-		response.WorkflowRun,
+		event.GetRepo(),
+		event.GetWorkflowRun(),
 	)
 	if err != nil {
 		ghalr.logger.Error("Failed to get run log", zap.Error(err))
@@ -115,8 +137,8 @@ func (ghalr *githubActionsLogReceiver) handleWorkflowRun(w http.ResponseWriter, 
 	defer runLogZip.Close()
 	jobs := mapJobs(workflowJobs.Jobs)
 	attachRunLog(&runLogZip.Reader, jobs)
-	run := mapRun(&response.WorkflowRun)
-	repository := mapRepository(&response.Repository)
+	run := mapRun(event.GetWorkflowRun())
+	repository := mapRepository(event.GetRepo())
 	logs, err := toLogs(repository, run, jobs)
 	if err != nil {
 		ghalr.logger.Error("Failed to convert Jobs to logs", zap.Error(err))
@@ -147,15 +169,14 @@ func fetchLog(httpClient *http.Client, logURL string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
-func getRunLog(cache runLogCache, logger *zap.Logger, ctx context.Context, ghClient *github.Client, httpClient *http.Client, repository github.Repository, workflowRun github.WorkflowRun) (*zip.ReadCloser, error) {
+func getRunLog(cache runLogCache, logger *zap.Logger, ctx context.Context, ghClient *github.Client, httpClient *http.Client, repository *github.Repository, workflowRun *github.WorkflowRun) (*zip.ReadCloser, error) {
 	filename := fmt.Sprintf("run-log-%d-%d.zip", workflowRun.ID, workflowRun.GetRunStartedAt().Unix())
 	fp := filepath.Join(os.TempDir(), "run-log-cache", filename)
 	logger.Info("Checking if log exists in cache", zap.String("path", fp))
 	if !cache.Exists(fp) {
 		logURL, _, err := ghClient.Actions.GetWorkflowRunLogs(ctx, repository.GetOwner().GetLogin(), repository.GetName(), workflowRun.GetID(), 4)
-		logger.Info("Received logs url", zap.Any("url", logURL))
 		if err != nil {
-			logger.Error("Failed to get logs url", zap.Error(err))
+			logger.Error("Failed to get logs download url", zap.Error(err))
 			return nil, err
 		}
 		response, err := fetchLog(httpClient, logURL.String())

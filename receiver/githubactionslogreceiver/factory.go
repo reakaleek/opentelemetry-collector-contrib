@@ -26,7 +26,7 @@ func createLogsReceiver(
 	consumer consumer.Logs,
 ) (receiver.Logs, error) {
 	cfg := rConf.(*Config)
-	return newLogsReceiver(cfg, params.Logger, consumer), nil
+	return newLogsReceiver(cfg, params, consumer), nil
 }
 
 // NewFactory creates a factory for githubactionslogsreceiver.
