@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configopaque"
+	"go.uber.org/multierr"
 	"net/url"
 )
 
@@ -17,19 +18,41 @@ type Config struct {
 	confighttp.ServerConfig `mapstructure:",squash"`
 	Path                    string              `mapstructure:"path"`
 	HealthCheckPath         string              `mapstructure:"health_check_path"`
-	GitHubToken             configopaque.String `mapstructure:"github_token"`
 	WebhookSecret           configopaque.String `mapstructure:"webhook_secret"`
+	GitHubAuth              Auth                `mapstructure:"github_auth"`
+}
+
+type Auth struct {
+	AppID          int64               `mapstructure:"app_id"`
+	InstallationID int64               `mapstructure:"installation_id"`
+	PrivateKey     configopaque.String `mapstructure:"private_key"`
+	PrivateKeyPath string              `mapstructure:"private_key_path"`
+
+	Token configopaque.String `mapstructure:"token"`
 }
 
 // Validate checks if the receiver configuration is valid
 func (cfg *Config) Validate() error {
-	_, err := url.ParseRequestURI(cfg.Path)
-	if err != nil {
-		return fmt.Errorf("path must be a valid URL: %s", err)
+	var err error
+	if cfg.Path != "" {
+		parsedUrl, parseErr := url.ParseRequestURI(cfg.Path)
+		if parseErr != nil {
+			err = multierr.Append(err, fmt.Errorf("path must be a valid URL: %s", parseErr))
+		}
+		if parsedUrl != nil && parsedUrl.Host != "" {
+			err = multierr.Append(err, fmt.Errorf("path must be a relative URL. e.g. \"/events\""))
+		}
 	}
-	if cfg.GitHubToken == "" {
-		return fmt.Errorf("github_token must be set. See https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens for more information on how to create a token")
+	if cfg.GitHubAuth.Token == "" && cfg.GitHubAuth.AppID == 0 {
+		err = multierr.Append(err, fmt.Errorf("either auth.token or auth.app_id must be set"))
 	}
-
-	return nil
+	if cfg.GitHubAuth.AppID != 0 {
+		if cfg.GitHubAuth.InstallationID == 0 {
+			err = multierr.Append(err, fmt.Errorf("auth.installation_id must be set if auth.app_id is set"))
+		}
+		if cfg.GitHubAuth.PrivateKey == "" && cfg.GitHubAuth.PrivateKeyPath == "" {
+			err = multierr.Append(err, fmt.Errorf("either auth.private_key or auth.private_key_path must be set if auth.app_id is set"))
+		}
+	}
+	return err
 }

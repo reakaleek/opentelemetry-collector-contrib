@@ -4,8 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v60/github"
 	"github.com/julienschmidt/httprouter"
 	"go.opentelemetry.io/collector/component"
@@ -107,15 +109,41 @@ func (ghalr *githubActionsLogReceiver) handleWorkflowRun(w http.ResponseWriter, 
 	}
 }
 
-func processWorkflowRunEvent(ghalr *githubActionsLogReceiver, w http.ResponseWriter, r *http.Request, event github.WorkflowRunEvent) {
+func processWorkflowRunEvent(
+	ghalr *githubActionsLogReceiver,
+	w http.ResponseWriter,
+	r *http.Request,
+	event github.WorkflowRunEvent,
+) {
 	if event.GetAction() != "completed" {
 		ghalr.logger.Info("Skipping the request because it is not a completed workflow run")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 	ghalr.logger.Info("Received Workflow Run Event", zap.String("url", event.GetWorkflowRun().GetHTMLURL()))
-	ghClient := github.NewClient(nil).WithAuthToken(string(ghalr.config.GitHubToken))
-	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(r.Context(), event.GetRepo().GetOwner().GetLogin(), event.GetRepo().GetName(), event.GetWorkflowRun().GetID(), nil)
+
+	ghClient, err := createGitHubClient(ghalr)
+	if err != nil {
+		ghalr.logger.Error("Failed to create GitHub client", zap.Error(err))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	defer func() {
+		rateLimits, _, err := ghClient.RateLimit.Get(r.Context())
+		if err != nil {
+			ghalr.logger.Warn("Failed to get rate limits", zap.Error(err))
+		}
+		ghalr.logger.Info("GitHub Api Rate limits", zap.Any("rate_limits", rateLimits.Core))
+	}()
+
+	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(
+		r.Context(),
+		event.GetRepo().GetOwner().GetLogin(),
+		event.GetRepo().GetName(),
+		event.GetWorkflowRun().GetID(),
+		nil,
+	)
 	if err != nil {
 		ghalr.logger.Error("Failed to get workflow Jobs", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
@@ -154,6 +182,41 @@ func processWorkflowRunEvent(ghalr *githubActionsLogReceiver, w http.ResponseWri
 	w.WriteHeader(http.StatusOK)
 }
 
+func createGitHubClient(ghalr *githubActionsLogReceiver) (*github.Client, error) {
+	if ghalr.config.GitHubAuth.AppID != 0 {
+		if ghalr.config.GitHubAuth.PrivateKey != "" {
+			var privateKey []byte
+			privateKey, err := base64.StdEncoding.DecodeString(string(ghalr.config.GitHubAuth.PrivateKey))
+			if err != nil {
+				privateKey = []byte(ghalr.config.GitHubAuth.PrivateKey)
+			}
+			itr, err := ghinstallation.New(
+				http.DefaultTransport,
+				ghalr.config.GitHubAuth.AppID,
+				ghalr.config.GitHubAuth.InstallationID,
+				privateKey,
+			)
+			if err != nil {
+				return &github.Client{}, err
+			}
+			return github.NewClient(&http.Client{Transport: itr}), nil
+		} else {
+			itr, err := ghinstallation.NewKeyFromFile(
+				http.DefaultTransport,
+				ghalr.config.GitHubAuth.AppID,
+				ghalr.config.GitHubAuth.InstallationID,
+				ghalr.config.GitHubAuth.PrivateKeyPath,
+			)
+			if err != nil {
+				return &github.Client{}, err
+			}
+			return github.NewClient(&http.Client{Transport: itr}), nil
+		}
+	} else {
+		return github.NewClient(nil).WithAuthToken(string(ghalr.config.GitHubAuth.Token)), nil
+	}
+}
+
 func fetchLog(httpClient *http.Client, logURL string) (io.ReadCloser, error) {
 	req, err := http.NewRequest("GET", logURL, nil)
 	if err != nil {
@@ -169,12 +232,26 @@ func fetchLog(httpClient *http.Client, logURL string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
-func getRunLog(cache runLogCache, logger *zap.Logger, ctx context.Context, ghClient *github.Client, httpClient *http.Client, repository *github.Repository, workflowRun *github.WorkflowRun) (*zip.ReadCloser, error) {
+func getRunLog(
+	cache runLogCache,
+	logger *zap.Logger,
+	ctx context.Context,
+	ghClient *github.Client,
+	httpClient *http.Client,
+	repository *github.Repository,
+	workflowRun *github.WorkflowRun,
+) (*zip.ReadCloser, error) {
 	filename := fmt.Sprintf("run-log-%d-%d.zip", workflowRun.ID, workflowRun.GetRunStartedAt().Unix())
 	fp := filepath.Join(os.TempDir(), "run-log-cache", filename)
 	logger.Info("Checking if log exists in cache", zap.String("path", fp))
 	if !cache.Exists(fp) {
-		logURL, _, err := ghClient.Actions.GetWorkflowRunLogs(ctx, repository.GetOwner().GetLogin(), repository.GetName(), workflowRun.GetID(), 4)
+		logURL, _, err := ghClient.Actions.GetWorkflowRunLogs(
+			ctx,
+			repository.GetOwner().GetLogin(),
+			repository.GetName(),
+			workflowRun.GetID(),
+			4,
+		)
 		if err != nil {
 			logger.Error("Failed to get logs download url", zap.Error(err))
 			return nil, err

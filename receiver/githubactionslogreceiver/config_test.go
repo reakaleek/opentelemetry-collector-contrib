@@ -8,8 +8,10 @@ import (
 
 func TestConfigValidateSuccess(t *testing.T) {
 	config := &githubactionslogreceiver.Config{
-		Path:        "/test",
-		GitHubToken: "faketoken",
+		Path: "/test",
+		GitHubAuth: githubactionslogreceiver.Auth{
+			Token: "token",
+		},
 	}
 	err := config.Validate()
 	assert.NoError(t, err)
@@ -21,13 +23,79 @@ func TestConfigValidateMissingGitHubTokenShouldFail(t *testing.T) {
 	}
 	err := config.Validate()
 	assert.Error(t, err)
+	assert.Equal(t, "either auth.token or auth.app_id must be set", err.Error())
 }
 
 func TestConfigValidateMalformedPathShouldFail(t *testing.T) {
+	// arrange
 	config := &githubactionslogreceiver.Config{
-		Path:        "lol !",
-		GitHubToken: "faketoken",
+		Path: "lol !",
+		GitHubAuth: githubactionslogreceiver.Auth{
+			Token: "fake-token",
+		},
+	}
+
+	// act
+	err := config.Validate()
+
+	// assert
+	assert.EqualError(t, err, "path must be a valid URL: parse \"lol !\": invalid URI for request")
+}
+
+func TestConfigValidateAbsolutePathShouldFail(t *testing.T) {
+	config := &githubactionslogreceiver.Config{
+		Path: "https://www.example.com/events",
+		GitHubAuth: githubactionslogreceiver.Auth{
+			Token: "fake-token",
+		},
 	}
 	err := config.Validate()
-	assert.ErrorContains(t, err, "path must be a valid URL")
+	assert.EqualError(t, err, "path must be a relative URL. e.g. \"/events\"")
+}
+
+func TestConfigValidateNoAuthShouldFail(t *testing.T) {
+	config := &githubactionslogreceiver.Config{}
+	err := config.Validate()
+	assert.EqualError(t, err, "either auth.token or auth.app_id must be set")
+}
+
+func TestConfigValidateGitHubAppShouldSucceed(t *testing.T) {
+	config := &githubactionslogreceiver.Config{
+		GitHubAuth: githubactionslogreceiver.Auth{
+			AppID:          123,
+			InstallationID: 456,
+			PrivateKey:     "fake",
+		},
+	}
+	err := config.Validate()
+
+	assert.NoError(t, err)
+}
+
+func TestConfigValidateGitHubAppPrivateKeyPathShouldSucceed(t *testing.T) {
+	config := &githubactionslogreceiver.Config{
+		GitHubAuth: githubactionslogreceiver.Auth{
+			AppID:          123,
+			InstallationID: 456,
+			PrivateKeyPath: "fake",
+		},
+	}
+	err := config.Validate()
+
+	assert.NoError(t, err)
+}
+
+func TestConfigValidateOnlyAppIdShouldFail(t *testing.T) {
+	// arrange
+	config := &githubactionslogreceiver.Config{
+		GitHubAuth: githubactionslogreceiver.Auth{
+			AppID: 123,
+		},
+	}
+
+	// act
+	err := config.Validate()
+
+	// assert
+	assert.EqualError(t, err, "auth.installation_id must be set if auth.app_id is set; either auth.private_key or auth.private_key_path must be set if auth.app_id is set")
 }
