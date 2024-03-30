@@ -3,8 +3,13 @@ package githubactionslogreceiver
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"github.com/h2non/gock"
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/collector/config/configopaque"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/receiver/receivertest"
 	"go.uber.org/zap/zaptest"
@@ -121,6 +126,10 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		New("https://api.github.com/repos/unelastisch/test-workflow-runs/actions/runs/8436609886/logs").
 		Reply(http.StatusFound).
 		AddHeader("Location", logURL)
+	gock.
+		New("https://api.github.com/rate_limit").
+		Reply(200).
+		BodyString(`{"resources":{"core":{"limit":5000,"remaining":4999,"reset":1631539200},"search":{"limit":30,"remaining":30,"reset":1631539200},"graphql":{"limit":5000,"remaining":5000,"reset":1631539200},"integration_manifest":{"limit":5000,"remaining":5000,"reset":1631539200}}}`)
 
 	zipFile, err := os.ReadFile("./testdata/fixtures/logs.zip")
 	zipFileReader := bytes.NewReader(zipFile)
@@ -131,7 +140,9 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 	ghalr := githubActionsLogReceiver{
 		logger: zaptest.NewLogger(t),
 		config: &Config{
-			GitHubToken: "token",
+			GitHubAuth: Auth{
+				Token: "token",
+			},
 		},
 		runLogCache: rlc{},
 		consumer:    consumertest.NewNop(),
@@ -161,7 +172,9 @@ func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
 	ghalr := githubActionsLogReceiver{
 		logger: zaptest.NewLogger(t),
 		config: &Config{
-			GitHubToken: "token",
+			GitHubAuth: Auth{
+				Token: "token",
+			},
 		},
 		runLogCache: rlc{},
 		consumer:    consumertest.NewNop(),
@@ -187,7 +200,9 @@ func TestStartAndShutDown(t *testing.T) {
 	ghalr := githubActionsLogReceiver{
 		logger: zaptest.NewLogger(t),
 		config: &Config{
-			GitHubToken:     "token",
+			GitHubAuth: Auth{
+				Token: "token",
+			},
 			Path:            defaultPath,
 			HealthCheckPath: defaultHealthCheckPath,
 		},
@@ -199,4 +214,110 @@ func TestStartAndShutDown(t *testing.T) {
 	assert.NoError(t, err)
 	err = ghalr.Shutdown(nil)
 	assert.NoError(t, err)
+}
+
+func TestCreateGitHubClient(t *testing.T) {
+	// arrange
+	ghalr := githubActionsLogReceiver{
+		config: &Config{
+			GitHubAuth: Auth{
+				Token: "token",
+			},
+		},
+	}
+
+	// act
+	_, err := createGitHubClient(&ghalr)
+
+	// assert
+	assert.NoError(t, err)
+}
+
+func TestCreateGitHubClient2(t *testing.T) {
+	// arrange private key
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return
+	}
+	pkcs1PrivateKey := x509.MarshalPKCS1PrivateKey(privateKey)
+	privateKeyBlock := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: pkcs1PrivateKey,
+	}
+	fp := filepath.Join(os.TempDir(), "private.*.pem")
+	file, err := os.Create(fp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := pem.Encode(file, privateKeyBlock); err != nil {
+		t.Fatal(err)
+	}
+
+	// arrange receiver config
+	ghalr := githubActionsLogReceiver{
+		config: &Config{
+			GitHubAuth: Auth{
+				AppID:          123,
+				InstallationID: 123,
+				PrivateKeyPath: fp,
+			},
+		},
+	}
+
+	// act
+	_, err = createGitHubClient(&ghalr)
+
+	// assert
+	assert.NoError(t, err)
+}
+
+func TestCreateGitHubClient3(t *testing.T) {
+	// arrange private key
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return
+	}
+	pkcs1PrivateKey := x509.MarshalPKCS1PrivateKey(privateKey)
+	privateKeyBlock := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: pkcs1PrivateKey,
+	}
+	encodedPrivateKey := pem.EncodeToMemory(privateKeyBlock)
+
+	// arrange receiver config
+	ghalr := githubActionsLogReceiver{
+		config: &Config{
+			GitHubAuth: Auth{
+				AppID:          123,
+				InstallationID: 123,
+				PrivateKey:     configopaque.String(encodedPrivateKey),
+			},
+		},
+	}
+
+	// act
+	_, err = createGitHubClient(&ghalr)
+
+	// assert
+	assert.NoError(t, err)
+}
+
+func TestCreateGitHubClient4(t *testing.T) {
+	// arrange
+	ghalr := githubActionsLogReceiver{
+		config: &Config{
+			GitHubAuth: Auth{
+				AppID:          123,
+				InstallationID: 123,
+				PrivateKey:     "malformed private key",
+			},
+		},
+	}
+
+	// act
+	_, err := createGitHubClient(&ghalr)
+
+	// assert
+	assert.EqualError(t, err, "could not parse private key: invalid key: Key must be a PEM encoded PKCS1 or PKCS8 key")
 }
