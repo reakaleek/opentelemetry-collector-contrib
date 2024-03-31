@@ -96,6 +96,7 @@ func startsWithTimestamp(line string) bool {
 
 // parseLogLine parses a log line from the GitHub Actions log file
 func parseLogLine(line string) (LogLine, error) {
+	var severityText string
 	var severityNumber = 0 // Unspecified
 	parts := strings.SplitN(line, " ", 2)
 	extractedTimestamp := parts[0]
@@ -104,13 +105,23 @@ func parseLogLine(line string) (LogLine, error) {
 	if err != nil {
 		return LogLine{}, err
 	}
-	if strings.HasPrefix(extractedLogMessage, "#[debug]") {
-		severityNumber = 5 // Debug
+	switch {
+	case strings.HasPrefix(extractedLogMessage, "##[debug]"):
+		{
+			severityNumber = 5
+			severityText = "DEBUG"
+		}
+	case strings.HasPrefix(extractedLogMessage, "##[error]"):
+		{
+			severityNumber = 17
+			severityText = "ERROR"
+		}
 	}
 	return LogLine{
 		Body:           extractedLogMessage,
 		Timestamp:      timestamp,
 		SeverityNumber: severityNumber,
+		SeverityText:   severityText,
 	}, nil
 }
 

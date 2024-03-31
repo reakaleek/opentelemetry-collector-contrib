@@ -11,6 +11,11 @@ type LogLine struct {
 	Body           string
 	Timestamp      time.Time
 	SeverityNumber int
+	SeverityText   string
+}
+
+func GetLog() {
+
 }
 
 type Repository struct {

@@ -113,15 +113,30 @@ func TestParseLogLine(t *testing.T) {
 
 func TestParseLogLineDebug(t *testing.T) {
 	// arrange
-	line := "2021-10-01T00:00:00Z #[debug] debug message"
+	line := "2021-10-01T00:00:00Z ##[debug] debug message"
 
 	// act
 	logLine, err := parseLogLine(line)
 
 	// assert
 	assert.NoError(t, err)
-	assert.Equal(t, "#[debug] debug message", logLine.Body)
+	assert.Equal(t, "##[debug] debug message", logLine.Body)
 	assert.Equal(t, 5, logLine.SeverityNumber)
+	assert.Equal(t, "DEBUG", logLine.SeverityText)
+}
+
+func TestParseLogLineError(t *testing.T) {
+	// arrange
+	line := "2021-10-01T00:00:00Z ##[error] error message"
+
+	// act
+	logLine, err := parseLogLine(line)
+
+	// assert
+	assert.NoError(t, err)
+	assert.Equal(t, "##[error] error message", logLine.Body)
+	assert.Equal(t, 17, logLine.SeverityNumber)
+	assert.Equal(t, "ERROR", logLine.SeverityText)
 }
 
 func TestParseLogErr(t *testing.T) {
