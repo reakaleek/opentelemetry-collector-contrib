@@ -120,14 +120,12 @@ func processWorkflowRunEvent(
 		return
 	}
 	ghalr.logger.Info("Received Workflow Run Event", zap.String("url", event.GetWorkflowRun().GetHTMLURL()))
-
-	ghClient, err := createGitHubClient(ghalr)
+	ghClient, err := createGitHubClient(ghalr.config.GitHubAuth)
 	if err != nil {
 		ghalr.logger.Error("Failed to create GitHub client", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
 	defer func() {
 		rateLimits, _, err := ghClient.RateLimit.Get(r.Context())
 		if err != nil {
@@ -135,7 +133,6 @@ func processWorkflowRunEvent(
 		}
 		ghalr.logger.Info("GitHub Api Rate limits", zap.Any("rate_limits", rateLimits.Core))
 	}()
-
 	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(
 		r.Context(),
 		event.GetRepo().GetOwner().GetLogin(),
@@ -190,18 +187,18 @@ func processWorkflowRunEvent(
 	w.WriteHeader(http.StatusOK)
 }
 
-func createGitHubClient(ghalr *githubActionsLogReceiver) (*github.Client, error) {
-	if ghalr.config.GitHubAuth.AppID != 0 {
-		if ghalr.config.GitHubAuth.PrivateKey != "" {
+func createGitHubClient(githubAuth GitHubAuth) (*github.Client, error) {
+	if githubAuth.AppID != 0 {
+		if githubAuth.PrivateKey != "" {
 			var privateKey []byte
-			privateKey, err := base64.StdEncoding.DecodeString(string(ghalr.config.GitHubAuth.PrivateKey))
+			privateKey, err := base64.StdEncoding.DecodeString(string(githubAuth.PrivateKey))
 			if err != nil {
-				privateKey = []byte(ghalr.config.GitHubAuth.PrivateKey)
+				privateKey = []byte(githubAuth.PrivateKey)
 			}
 			itr, err := ghinstallation.New(
 				http.DefaultTransport,
-				ghalr.config.GitHubAuth.AppID,
-				ghalr.config.GitHubAuth.InstallationID,
+				githubAuth.AppID,
+				githubAuth.InstallationID,
 				privateKey,
 			)
 			if err != nil {
@@ -211,9 +208,9 @@ func createGitHubClient(ghalr *githubActionsLogReceiver) (*github.Client, error)
 		} else {
 			itr, err := ghinstallation.NewKeyFromFile(
 				http.DefaultTransport,
-				ghalr.config.GitHubAuth.AppID,
-				ghalr.config.GitHubAuth.InstallationID,
-				ghalr.config.GitHubAuth.PrivateKeyPath,
+				githubAuth.AppID,
+				githubAuth.InstallationID,
+				githubAuth.PrivateKeyPath,
 			)
 			if err != nil {
 				return &github.Client{}, err
@@ -221,7 +218,7 @@ func createGitHubClient(ghalr *githubActionsLogReceiver) (*github.Client, error)
 			return github.NewClient(&http.Client{Transport: itr}), nil
 		}
 	} else {
-		return github.NewClient(nil).WithAuthToken(string(ghalr.config.GitHubAuth.Token)), nil
+		return github.NewClient(nil).WithAuthToken(string(githubAuth.Token)), nil
 	}
 }
 

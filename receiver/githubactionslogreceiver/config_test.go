@@ -9,7 +9,7 @@ import (
 func TestConfigValidateSuccess(t *testing.T) {
 	config := &githubactionslogreceiver.Config{
 		Path: "/test",
-		GitHubAuth: githubactionslogreceiver.Auth{
+		GitHubAuth: githubactionslogreceiver.GitHubAuth{
 			Token: "token",
 		},
 	}
@@ -30,7 +30,7 @@ func TestConfigValidateMalformedPathShouldFail(t *testing.T) {
 	// arrange
 	config := &githubactionslogreceiver.Config{
 		Path: "lol !",
-		GitHubAuth: githubactionslogreceiver.Auth{
+		GitHubAuth: githubactionslogreceiver.GitHubAuth{
 			Token: "fake-token",
 		},
 	}
@@ -45,7 +45,7 @@ func TestConfigValidateMalformedPathShouldFail(t *testing.T) {
 func TestConfigValidateAbsolutePathShouldFail(t *testing.T) {
 	config := &githubactionslogreceiver.Config{
 		Path: "https://www.example.com/events",
-		GitHubAuth: githubactionslogreceiver.Auth{
+		GitHubAuth: githubactionslogreceiver.GitHubAuth{
 			Token: "fake-token",
 		},
 	}
@@ -61,7 +61,7 @@ func TestConfigValidateNoAuthShouldFail(t *testing.T) {
 
 func TestConfigValidateGitHubAppShouldSucceed(t *testing.T) {
 	config := &githubactionslogreceiver.Config{
-		GitHubAuth: githubactionslogreceiver.Auth{
+		GitHubAuth: githubactionslogreceiver.GitHubAuth{
 			AppID:          123,
 			InstallationID: 456,
 			PrivateKey:     "fake",
@@ -74,7 +74,7 @@ func TestConfigValidateGitHubAppShouldSucceed(t *testing.T) {
 
 func TestConfigValidateGitHubAppPrivateKeyPathShouldSucceed(t *testing.T) {
 	config := &githubactionslogreceiver.Config{
-		GitHubAuth: githubactionslogreceiver.Auth{
+		GitHubAuth: githubactionslogreceiver.GitHubAuth{
 			AppID:          123,
 			InstallationID: 456,
 			PrivateKeyPath: "fake",
@@ -88,7 +88,7 @@ func TestConfigValidateGitHubAppPrivateKeyPathShouldSucceed(t *testing.T) {
 func TestConfigValidateOnlyAppIdShouldFail(t *testing.T) {
 	// arrange
 	config := &githubactionslogreceiver.Config{
-		GitHubAuth: githubactionslogreceiver.Auth{
+		GitHubAuth: githubactionslogreceiver.GitHubAuth{
 			AppID: 123,
 		},
 	}

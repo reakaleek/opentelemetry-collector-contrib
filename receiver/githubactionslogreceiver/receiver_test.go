@@ -140,7 +140,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 	ghalr := githubActionsLogReceiver{
 		logger: zaptest.NewLogger(t),
 		config: &Config{
-			GitHubAuth: Auth{
+			GitHubAuth: GitHubAuth{
 				Token: "token",
 			},
 		},
@@ -172,7 +172,7 @@ func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
 	ghalr := githubActionsLogReceiver{
 		logger: zaptest.NewLogger(t),
 		config: &Config{
-			GitHubAuth: Auth{
+			GitHubAuth: GitHubAuth{
 				Token: "token",
 			},
 		},
@@ -200,7 +200,7 @@ func TestStartAndShutDown(t *testing.T) {
 	ghalr := githubActionsLogReceiver{
 		logger: zaptest.NewLogger(t),
 		config: &Config{
-			GitHubAuth: Auth{
+			GitHubAuth: GitHubAuth{
 				Token: "token",
 			},
 			Path:            defaultPath,
@@ -218,16 +218,12 @@ func TestStartAndShutDown(t *testing.T) {
 
 func TestCreateGitHubClient(t *testing.T) {
 	// arrange
-	ghalr := githubActionsLogReceiver{
-		config: &Config{
-			GitHubAuth: Auth{
-				Token: "token",
-			},
-		},
+	ghAuth := GitHubAuth{
+		Token: "token",
 	}
 
 	// act
-	_, err := createGitHubClient(&ghalr)
+	_, err := createGitHubClient(ghAuth)
 
 	// assert
 	assert.NoError(t, err)
@@ -255,18 +251,14 @@ func TestCreateGitHubClient2(t *testing.T) {
 	}
 
 	// arrange receiver config
-	ghalr := githubActionsLogReceiver{
-		config: &Config{
-			GitHubAuth: Auth{
-				AppID:          123,
-				InstallationID: 123,
-				PrivateKeyPath: fp,
-			},
-		},
+	ghAuth := GitHubAuth{
+		AppID:          123,
+		InstallationID: 123,
+		PrivateKeyPath: fp,
 	}
 
 	// act
-	_, err = createGitHubClient(&ghalr)
+	_, err = createGitHubClient(ghAuth)
 
 	// assert
 	assert.NoError(t, err)
@@ -286,18 +278,14 @@ func TestCreateGitHubClient3(t *testing.T) {
 	encodedPrivateKey := pem.EncodeToMemory(privateKeyBlock)
 
 	// arrange receiver config
-	ghalr := githubActionsLogReceiver{
-		config: &Config{
-			GitHubAuth: Auth{
-				AppID:          123,
-				InstallationID: 123,
-				PrivateKey:     configopaque.String(encodedPrivateKey),
-			},
-		},
+	ghAuth := GitHubAuth{
+		AppID:          123,
+		InstallationID: 123,
+		PrivateKey:     configopaque.String(encodedPrivateKey),
 	}
 
 	// act
-	_, err = createGitHubClient(&ghalr)
+	_, err = createGitHubClient(ghAuth)
 
 	// assert
 	assert.NoError(t, err)
@@ -305,18 +293,14 @@ func TestCreateGitHubClient3(t *testing.T) {
 
 func TestCreateGitHubClient4(t *testing.T) {
 	// arrange
-	ghalr := githubActionsLogReceiver{
-		config: &Config{
-			GitHubAuth: Auth{
-				AppID:          123,
-				InstallationID: 123,
-				PrivateKey:     "malformed private key",
-			},
-		},
+	ghAuth := GitHubAuth{
+		AppID:          123,
+		InstallationID: 123,
+		PrivateKey:     "malformed private key",
 	}
 
 	// act
-	_, err := createGitHubClient(&ghalr)
+	_, err := createGitHubClient(ghAuth)
 
 	// assert
 	assert.EqualError(t, err, "could not parse private key: invalid key: Key must be a PEM encoded PKCS1 or PKCS8 key")

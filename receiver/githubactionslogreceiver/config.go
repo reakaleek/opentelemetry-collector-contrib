@@ -19,10 +19,10 @@ type Config struct {
 	Path                    string              `mapstructure:"path"`
 	HealthCheckPath         string              `mapstructure:"health_check_path"`
 	WebhookSecret           configopaque.String `mapstructure:"webhook_secret"`
-	GitHubAuth              Auth                `mapstructure:"github_auth"`
+	GitHubAuth              GitHubAuth          `mapstructure:"github_auth"`
 }
 
-type Auth struct {
+type GitHubAuth struct {
 	AppID          int64               `mapstructure:"app_id"`
 	InstallationID int64               `mapstructure:"installation_id"`
 	PrivateKey     configopaque.String `mapstructure:"private_key"`
