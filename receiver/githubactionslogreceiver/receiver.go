@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bradleyfalzon/ghinstallation/v2"
+	"github.com/gofri/go-github-ratelimit/github_ratelimit"
 	"github.com/google/go-github/v60/github"
 	"github.com/julienschmidt/httprouter"
 	"go.opentelemetry.io/collector/component"
@@ -202,9 +203,10 @@ func createGitHubClient(githubAuth GitHubAuth) (*github.Client, error) {
 				privateKey,
 			)
 			if err != nil {
-				return &github.Client{}, err
+				return nil, err
 			}
-			return github.NewClient(&http.Client{Transport: itr}), nil
+			rateLimiter, err := github_ratelimit.NewRateLimitWaiterClient(itr)
+			return github.NewClient(rateLimiter), nil
 		} else {
 			itr, err := ghinstallation.NewKeyFromFile(
 				http.DefaultTransport,
@@ -213,12 +215,17 @@ func createGitHubClient(githubAuth GitHubAuth) (*github.Client, error) {
 				githubAuth.PrivateKeyPath,
 			)
 			if err != nil {
-				return &github.Client{}, err
+				return nil, err
 			}
-			return github.NewClient(&http.Client{Transport: itr}), nil
+			rateLimiter, err := github_ratelimit.NewRateLimitWaiterClient(itr)
+			return github.NewClient(rateLimiter), nil
 		}
 	} else {
-		return github.NewClient(nil).WithAuthToken(string(githubAuth.Token)), nil
+		rateLimiter, err := github_ratelimit.NewRateLimitWaiterClient(nil)
+		if err != nil {
+			return nil, nil
+		}
+		return github.NewClient(rateLimiter).WithAuthToken(string(githubAuth.Token)), nil
 	}
 }
 
