@@ -156,18 +156,21 @@ func processWorkflowRunEvent(
 		event.GetRepo(),
 		event.GetWorkflowRun(),
 	)
-	defer func() {
-		err := deleteFunc()
-		if err != nil {
-			ghalr.logger.Error("Failed to delete run log zip", zap.Error(err))
-		}
-	}()
 	if err != nil {
 		ghalr.logger.Error("Failed to get run log", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	defer runLogZip.Close()
+	defer func() {
+		err := runLogZip.Close()
+		if err != nil {
+			ghalr.logger.Warn("Failed to close run log zip", zap.Error(err))
+		}
+		err = deleteFunc()
+		if err != nil {
+			ghalr.logger.Warn("Failed to delete run log zip", zap.Error(err))
+		}
+	}()
 	jobs := mapJobs(workflowJobs.Jobs)
 	attachRunLog(&runLogZip.Reader, jobs)
 	run := mapRun(event.GetWorkflowRun())
