@@ -2,7 +2,6 @@ package githubactionslogreceiver
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -149,7 +148,7 @@ func processWorkflowRunEvent(
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	runLogZip, err := getRunLog(
+	runLogZip, deleteFunc, err := getRunLog(
 		ghalr.runLogCache,
 		ghalr.logger,
 		r.Context(), ghClient,
@@ -157,6 +156,12 @@ func processWorkflowRunEvent(
 		event.GetRepo(),
 		event.GetWorkflowRun(),
 	)
+	defer func() {
+		err := deleteFunc()
+		if err != nil {
+			ghalr.logger.Error("Failed to delete run log zip", zap.Error(err))
+		}
+	}()
 	if err != nil {
 		ghalr.logger.Error("Failed to get run log", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
@@ -240,7 +245,7 @@ func getRunLog(
 	httpClient *http.Client,
 	repository *github.Repository,
 	workflowRun *github.WorkflowRun,
-) (*zip.ReadCloser, error) {
+) (*zip.ReadCloser, func() error, error) {
 	filename := fmt.Sprintf("run-log-%d-%d.zip", workflowRun.ID, workflowRun.GetRunStartedAt().Unix())
 	fp := filepath.Join(os.TempDir(), "run-log-cache", filename)
 	logger.Info("Checking if log exists in cache", zap.String("path", fp))
@@ -254,23 +259,23 @@ func getRunLog(
 		)
 		if err != nil {
 			logger.Error("Failed to get logs download url", zap.Error(err))
-			return nil, err
+			return nil, nil, err
 		}
 		response, err := fetchLog(httpClient, logURL.String())
 		defer response.Close()
-		data, err := io.ReadAll(response)
-		respReader := bytes.NewReader(data)
-		// Check if the response is a valid zip format
-		_, err = zip.NewReader(respReader, respReader.Size())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		err = cache.Create(fp, respReader)
+		err = cache.Create(fp, response)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return cache.Open(fp)
+	zipFile, err := cache.Open(fp)
+	deleteFunc := func() error {
+		return os.Remove(fp)
+	}
+	return zipFile, deleteFunc, err
 }
 
 // This function takes a zip file of logs and a list of Jobs.
