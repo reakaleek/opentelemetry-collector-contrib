@@ -132,7 +132,12 @@ func processWorkflowRunEvent(
 		if err != nil {
 			ghalr.logger.Warn("Failed to get rate limits", zap.Error(err))
 		}
-		ghalr.logger.Info("GitHub Api Rate limits", zap.Any("rate_limits", rateLimits.Core))
+		ghalr.logger.Info(
+			"GitHub Api Rate limits",
+			zap.Int("limit", rateLimits.Core.Limit),
+			zap.Int("remaining", rateLimits.Core.Remaining),
+			zap.Time("reset", rateLimits.Core.Reset.Time),
+		)
 	}()
 	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(
 		r.Context(),
