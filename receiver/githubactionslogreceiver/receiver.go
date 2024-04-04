@@ -133,9 +133,9 @@ func processWorkflowRunEvent(
 		}
 		ghalr.logger.Info(
 			"GitHub Api Rate limits",
-			zap.Int("limit", rateLimits.Core.Limit),
-			zap.Int("remaining", rateLimits.Core.Remaining),
-			zap.Time("reset", rateLimits.Core.Reset.Time),
+			zap.Int("github.api.rate-limit.core.limit", rateLimits.Core.Limit),
+			zap.Int("github.api.rate-limit.core.remaining", rateLimits.Core.Remaining),
+			zap.Time("github.api.rate-limit.core.reset", rateLimits.Core.Reset.Time),
 		)
 	}()
 	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(
