@@ -115,11 +115,12 @@ func processWorkflowRunEvent(
 	event github.WorkflowRunEvent,
 ) {
 	if event.GetAction() != "completed" {
-		ghalr.logger.Info("Skipping the request because it is not a completed workflow run")
+		ghalr.logger.Debug("Skipping the request because it is not a completed workflow run")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	ghalr.logger.Info("Received Workflow Run Event", zap.String("url", event.GetWorkflowRun().GetHTMLURL()))
+	ghalr.logger.Info("Received Workflow Run Event", zap.String("github.workflow_run.url", event.GetWorkflowRun().GetHTMLURL()))
+	ghalr.logger.Debug("Workflow Run Event", zap.Any("event", event))
 	ghClient, err := createGitHubClient(ghalr.config.GitHubAuth)
 	if err != nil {
 		ghalr.logger.Error("Failed to create GitHub client", zap.Error(err))
@@ -164,12 +165,10 @@ func processWorkflowRunEvent(
 		return
 	}
 	defer func() {
-		err := runLogZip.Close()
-		if err != nil {
+		if err := runLogZip.Close(); err != nil {
 			ghalr.logger.Warn("Failed to close run log zip", zap.Error(err))
 		}
-		err = deleteFunc()
-		if err != nil {
+		if err := deleteFunc(); err != nil {
 			ghalr.logger.Warn("Failed to delete run log zip", zap.Error(err))
 		}
 	}()
@@ -253,7 +252,7 @@ func getRunLog(
 ) (*zip.ReadCloser, func() error, error) {
 	filename := fmt.Sprintf("run-log-%d-%d.zip", workflowRun.ID, workflowRun.GetRunStartedAt().Unix())
 	fp := filepath.Join(os.TempDir(), "run-log-cache", filename)
-	logger.Info("Checking if log exists in cache", zap.String("path", fp))
+	logger.Info("Checking if log exists in cache", zap.String("rlc.path", fp))
 	if !cache.Exists(fp) {
 		logURL, _, err := ghClient.Actions.GetWorkflowRunLogs(
 			ctx,

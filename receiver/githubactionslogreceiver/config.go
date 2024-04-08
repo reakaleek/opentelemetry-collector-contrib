@@ -44,14 +44,14 @@ func (cfg *Config) Validate() error {
 		}
 	}
 	if cfg.GitHubAuth.Token == "" && cfg.GitHubAuth.AppID == 0 {
-		err = multierr.Append(err, fmt.Errorf("either auth.token or auth.app_id must be set"))
+		err = multierr.Append(err, fmt.Errorf("either github_auth.token or github_auth.app_id must be set"))
 	}
 	if cfg.GitHubAuth.AppID != 0 {
 		if cfg.GitHubAuth.InstallationID == 0 {
-			err = multierr.Append(err, fmt.Errorf("auth.installation_id must be set if auth.app_id is set"))
+			err = multierr.Append(err, fmt.Errorf("github_auth.installation_id must be set if github_auth.app_id is set"))
 		}
 		if cfg.GitHubAuth.PrivateKey == "" && cfg.GitHubAuth.PrivateKeyPath == "" {
-			err = multierr.Append(err, fmt.Errorf("either auth.private_key or auth.private_key_path must be set if auth.app_id is set"))
+			err = multierr.Append(err, fmt.Errorf("either github_auth.private_key or github_auth.private_key_path must be set if github_auth.app_id is set"))
 		}
 	}
 	return err
