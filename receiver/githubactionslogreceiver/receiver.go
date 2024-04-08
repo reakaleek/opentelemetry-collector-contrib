@@ -19,7 +19,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 )
 
 type githubActionsLogReceiver struct {
@@ -28,7 +27,6 @@ type githubActionsLogReceiver struct {
 	logger      *zap.Logger
 	runLogCache runLogCache
 	server      *http.Server
-	wg          sync.WaitGroup
 	settings    receiver.CreateSettings
 	ghClient    *github.Client
 }
@@ -62,10 +60,8 @@ func (ghalr *githubActionsLogReceiver) Start(_ context.Context, host component.H
 	if err != nil {
 		return err
 	}
-	ghalr.wg.Add(1)
 	go func() {
-		defer ghalr.wg.Done()
-		if err := ghalr.server.Serve(listener); errors.Is(err, http.ErrServerClosed) {
+		if err := ghalr.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			ghalr.logger.Error("Receiver server has been shutdown", zap.Error(err))
 			ghalr.settings.TelemetrySettings.ReportStatus(component.NewFatalErrorEvent(err))
 		}
@@ -73,13 +69,11 @@ func (ghalr *githubActionsLogReceiver) Start(_ context.Context, host component.H
 	return nil
 }
 
-func (ghalr *githubActionsLogReceiver) Shutdown(_ context.Context) error {
+func (ghalr *githubActionsLogReceiver) Shutdown(ctx context.Context) error {
 	if ghalr.server == nil {
 		return nil
 	}
-	err := ghalr.server.Close()
-	ghalr.wg.Wait()
-	return err
+	return ghalr.server.Shutdown(ctx)
 }
 
 func (ghalr *githubActionsLogReceiver) handleHealthCheck(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
