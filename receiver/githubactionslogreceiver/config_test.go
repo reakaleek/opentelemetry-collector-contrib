@@ -23,7 +23,7 @@ func TestConfigValidateMissingGitHubTokenShouldFail(t *testing.T) {
 	}
 	err := config.Validate()
 	assert.Error(t, err)
-	assert.Equal(t, "either auth.token or auth.app_id must be set", err.Error())
+	assert.Equal(t, "either github_auth.token or github_auth.app_id must be set", err.Error())
 }
 
 func TestConfigValidateMalformedPathShouldFail(t *testing.T) {
@@ -56,7 +56,7 @@ func TestConfigValidateAbsolutePathShouldFail(t *testing.T) {
 func TestConfigValidateNoAuthShouldFail(t *testing.T) {
 	config := &githubactionslogreceiver.Config{}
 	err := config.Validate()
-	assert.EqualError(t, err, "either auth.token or auth.app_id must be set")
+	assert.EqualError(t, err, "either github_auth.token or github_auth.app_id must be set")
 }
 
 func TestConfigValidateGitHubAppShouldSucceed(t *testing.T) {
@@ -97,5 +97,5 @@ func TestConfigValidateOnlyAppIdShouldFail(t *testing.T) {
 	err := config.Validate()
 
 	// assert
-	assert.EqualError(t, err, "auth.installation_id must be set if auth.app_id is set; either auth.private_key or auth.private_key_path must be set if auth.app_id is set")
+	assert.EqualError(t, err, "github_auth.installation_id must be set if github_auth.app_id is set; either github_auth.private_key or github_auth.private_key_path must be set if github_auth.app_id is set")
 }
