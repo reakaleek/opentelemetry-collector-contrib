@@ -30,6 +30,7 @@ type githubActionsLogReceiver struct {
 	server      *http.Server
 	wg          sync.WaitGroup
 	settings    receiver.CreateSettings
+	ghClient    *github.Client
 }
 
 func newLogsReceiver(cfg *Config, params receiver.CreateSettings, consumer consumer.Logs) *githubActionsLogReceiver {
@@ -44,6 +45,10 @@ func newLogsReceiver(cfg *Config, params receiver.CreateSettings, consumer consu
 
 func (ghalr *githubActionsLogReceiver) Start(_ context.Context, host component.Host) error {
 	var err error
+	ghalr.ghClient, err = createGitHubClient(ghalr.config.GitHubAuth)
+	if err != nil {
+		return fmt.Errorf("failed to create GitHub client: %w", err)
+	}
 	endpoint := fmt.Sprintf("%s%s", ghalr.config.ServerConfig.Endpoint, ghalr.config.Path)
 	ghalr.logger.Info("Starting receiver", zap.String("endpoint", endpoint))
 	listener, err := ghalr.config.ServerConfig.ToListener()
@@ -121,14 +126,8 @@ func processWorkflowRunEvent(
 	}
 	ghalr.logger.Info("Received Workflow Run Event", zap.String("github.workflow_run.url", event.GetWorkflowRun().GetHTMLURL()))
 	ghalr.logger.Debug("Workflow Run Event", zap.Any("event", event))
-	ghClient, err := createGitHubClient(ghalr.config.GitHubAuth)
-	if err != nil {
-		ghalr.logger.Error("Failed to create GitHub client", zap.Error(err))
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
 	defer func() {
-		rateLimits, _, err := ghClient.RateLimit.Get(r.Context())
+		rateLimits, _, err := ghalr.ghClient.RateLimit.Get(r.Context())
 		if err != nil {
 			ghalr.logger.Warn("Failed to get rate limits", zap.Error(err))
 		}
@@ -139,7 +138,7 @@ func processWorkflowRunEvent(
 			zap.Time("github.api.rate-limit.core.reset", rateLimits.Core.Reset.Time),
 		)
 	}()
-	workflowJobs, _, err := ghClient.Actions.ListWorkflowJobs(
+	workflowJobs, _, err := ghalr.ghClient.Actions.ListWorkflowJobs(
 		r.Context(),
 		event.GetRepo().GetOwner().GetLogin(),
 		event.GetRepo().GetName(),
@@ -154,7 +153,7 @@ func processWorkflowRunEvent(
 	runLogZip, deleteFunc, err := getRunLog(
 		ghalr.runLogCache,
 		ghalr.logger,
-		r.Context(), ghClient,
+		r.Context(), ghalr.ghClient,
 		http.DefaultClient,
 		event.GetRepo(),
 		event.GetWorkflowRun(),
