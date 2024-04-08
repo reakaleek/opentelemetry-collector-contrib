@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"github.com/google/go-github/v60/github"
 	"github.com/h2non/gock"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/config/configopaque"
@@ -137,6 +138,9 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		New(logURL).
 		Reply(200).
 		Body(zipFileReader)
+
+	ghClient := github.NewClient(nil)
+
 	ghalr := githubActionsLogReceiver{
 		logger: zaptest.NewLogger(t),
 		config: &Config{
@@ -146,6 +150,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		},
 		runLogCache: rlc{},
 		consumer:    consumertest.NewNop(),
+		ghClient:    ghClient,
 	}
 	workflowRunJsonData, err := os.ReadFile("./testdata/fixtures/workflow_run-completed.event.json")
 	if err != nil {
