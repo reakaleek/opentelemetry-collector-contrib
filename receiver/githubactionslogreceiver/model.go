@@ -14,12 +14,10 @@ type LogLine struct {
 	SeverityText   string
 }
 
-func GetLog() {
-
-}
-
 type Repository struct {
 	FullName string
+	Org      string
+	Name     string
 }
 
 type Run struct {
@@ -120,5 +118,7 @@ func mapRun(run *github.WorkflowRun) Run {
 func mapRepository(repo *github.Repository) Repository {
 	return Repository{
 		FullName: repo.GetFullName(),
+		Org:      repo.GetOwner().GetLogin(),
+		Name:     repo.GetName(),
 	}
 }

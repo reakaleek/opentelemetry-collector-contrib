@@ -13,6 +13,7 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 	logs := plog.NewLogs()
 	resourceLogs := logs.ResourceLogs().AppendEmpty()
 	resourceAttributes := resourceLogs.Resource().Attributes()
+	resourceAttributes.PutStr("service.name", fmt.Sprintf("github-actions-%s-%s", repository.Org, repository.Name))
 	resourceAttributes.PutStr("github.repository", repository.FullName)
 	resourceAttributes.PutInt("github.workflow_run.id", run.ID)
 	resourceAttributes.PutInt("github.workflow_run.run_attempt", run.RunAttempt)
