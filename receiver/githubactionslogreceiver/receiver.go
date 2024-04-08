@@ -70,9 +70,6 @@ func (ghalr *githubActionsLogReceiver) Start(_ context.Context, host component.H
 }
 
 func (ghalr *githubActionsLogReceiver) Shutdown(ctx context.Context) error {
-	if ghalr.server == nil {
-		return nil
-	}
 	return ghalr.server.Shutdown(ctx)
 }
 
