@@ -18,7 +18,7 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 	resourceAttributes.PutInt("github.workflow_run.id", run.ID)
 	resourceAttributes.PutInt("github.workflow_run.run_attempt", run.RunAttempt)
 	for _, job := range jobs {
-		scopeLogsSlice := logs.ResourceLogs().AppendEmpty().ScopeLogs()
+		scopeLogsSlice := resourceLogs.ScopeLogs()
 		scopeLogs := scopeLogsSlice.AppendEmpty()
 		scopeLogs.Scope().SetName("github-actions")
 		logRecords := scopeLogs.LogRecords()

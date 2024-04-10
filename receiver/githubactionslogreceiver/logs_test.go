@@ -185,7 +185,7 @@ func TestToLogs(t *testing.T) {
 	logs, err := toLogs(Repository{}, Run{}, jobs)
 
 	// assert
-	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
+	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
 	logLine, err := parseLogLine(line)
 	if err != nil {
 		t.Fatal(err)
@@ -233,7 +233,7 @@ func TestToLogsMultipleLogLines(t *testing.T) {
 	logs, err := toLogs(Repository{}, Run{}, jobs)
 
 	// assert
-	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
+	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestToLogsMultineLogWithEmptyLine(t *testing.T) {
 	logs, err := toLogs(Repository{}, Run{}, jobs)
 
 	// assert
-	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
+	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ Foo Bar
 	logs, err := toLogs(Repository{}, Run{}, jobs)
 
 	// assert
-	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
+	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +387,7 @@ func TestToLogsStartingWithEmptyLines(t *testing.T) {
 	logs, err := toLogs(Repository{}, Run{}, jobs)
 
 	// assert
-	logRecords := logs.ResourceLogs().At(1).ScopeLogs().At(0).LogRecords()
+	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
 	if err != nil {
 		t.Fatal(err)
 	}

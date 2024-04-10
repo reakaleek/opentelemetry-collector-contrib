@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"github.com/google/go-github/v60/github"
 	"github.com/h2non/gock"
 	"github.com/stretchr/testify/assert"
@@ -20,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestAttachRunLog(t *testing.T) {
@@ -120,7 +122,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	gock.
-		New("https://api.github.com/repos/unelastisch/test-workflow-runs/actions/runs/8436609886/jobs").
+		New("https://api.github.com/repos/unelastisch/test-workflow-runs/actions/runs/8436609886/attempts/1/jobs?per_page=100").
 		Reply(200).
 		BodyString(string(jsonData))
 	gock.
@@ -131,16 +133,42 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		New("https://api.github.com/rate_limit").
 		Reply(200).
 		BodyString(`{"resources":{"core":{"limit":5000,"remaining":4999,"reset":1631539200},"search":{"limit":30,"remaining":30,"reset":1631539200},"graphql":{"limit":5000,"remaining":5000,"reset":1631539200},"integration_manifest":{"limit":5000,"remaining":5000,"reset":1631539200}}}`)
+	logFileNames := []string{
+		"1_Set up job.txt",
+		"2_Run actions_checkout@v2.txt",
+		"3_Set up Ruby.txt",
+		"4_Run actions_cache@v3.txt",
+		"5_Install Bundler.txt",
+		"6_Install Gems.txt",
+		"7_Run Tests.txt",
+		"8_Deploy to Heroku.txt",
+		"16_Post actions_cache@v3.txt",
+		"17_Complete job.txt",
+	}
+	buf := new(bytes.Buffer)
+	func() {
+		writer := zip.NewWriter(buf)
+		defer writer.Close()
+		for _, logFileName := range logFileNames {
+			file, err := writer.Create(filepath.Join("build", logFileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			timestamp := time.Now().Format("2006-01-02T15:04:05Z")
 
-	zipFile, err := os.ReadFile("./testdata/fixtures/logs.zip")
-	zipFileReader := bytes.NewReader(zipFile)
+			_, err = file.Write([]byte(fmt.Sprintf("%s Logs of %s", timestamp, logFileName)))
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}()
+	reader := bytes.NewReader(buf.Bytes())
 	gock.
 		New(logURL).
 		Reply(200).
-		Body(zipFileReader)
-
+		Body(reader)
 	ghClient := github.NewClient(nil)
-
+	consumer := new(consumertest.LogsSink)
 	ghalr := githubActionsLogReceiver{
 		logger: zaptest.NewLogger(t),
 		config: &Config{
@@ -149,7 +177,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 			},
 		},
 		runLogCache: rlc{},
-		consumer:    consumertest.NewNop(),
+		consumer:    consumer,
 		ghClient:    ghClient,
 	}
 	workflowRunJsonData, err := os.ReadFile("./testdata/fixtures/workflow_run-completed.event.json")
@@ -162,7 +190,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("X-GitHub-Event", "workflow_run")
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		ghalr.handleWorkflowRun(w, r, nil)
+		ghalr.handleEvent(w, r, nil)
 	})
 
 	// act
@@ -170,6 +198,24 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 
 	// assert
 	assert.Equal(t, http.StatusOK, w.Code)
+	assert.True(t, gock.IsDone())
+	assert.Len(t, logFileNames, consumer.LogRecordCount())
+	assert.Len(t, consumer.AllLogs(), 1)
+	for i := 0; i < len(logFileNames); i++ {
+		assert.Equal(
+			t,
+			fmt.Sprintf("Logs of %s", logFileNames[i]),
+			consumer.AllLogs()[0].
+				ResourceLogs().
+				At(0).
+				ScopeLogs().
+				At(0).
+				LogRecords().
+				At(i).
+				Body().
+				Str(),
+		)
+	}
 }
 
 func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
@@ -191,7 +237,7 @@ func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("X-GitHub-Event", "workflow_run")
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		ghalr.handleWorkflowRun(w, r, nil)
+		ghalr.handleEvent(w, r, nil)
 	})
 
 	// act

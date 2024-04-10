@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 type githubActionsLogReceiver struct {
@@ -45,6 +46,10 @@ func (ghalr *githubActionsLogReceiver) Start(_ context.Context, host component.H
 	var err error
 	ghalr.ghClient, err = createGitHubClient(ghalr.config.GitHubAuth)
 	if err != nil {
+		return err
+	}
+
+	if err != nil {
 		return fmt.Errorf("failed to create GitHub client: %w", err)
 	}
 	endpoint := fmt.Sprintf("%s%s", ghalr.config.ServerConfig.Endpoint, ghalr.config.Path)
@@ -54,7 +59,7 @@ func (ghalr *githubActionsLogReceiver) Start(_ context.Context, host component.H
 		return err
 	}
 	router := httprouter.New()
-	router.POST(ghalr.config.Path, ghalr.handleWorkflowRun)
+	router.POST(ghalr.config.Path, ghalr.handleEvent)
 	router.GET(ghalr.config.HealthCheckPath, ghalr.handleHealthCheck)
 	ghalr.server, err = ghalr.config.ServerConfig.ToServer(host, ghalr.settings.TelemetrySettings, router)
 	if err != nil {
@@ -73,6 +78,7 @@ func (ghalr *githubActionsLogReceiver) Shutdown(ctx context.Context) error {
 	if ghalr.server == nil {
 		return nil
 	}
+	ghalr.logger.Info("Shutting down receiver")
 	return ghalr.server.Shutdown(ctx)
 }
 
@@ -80,7 +86,9 @@ func (ghalr *githubActionsLogReceiver) handleHealthCheck(w http.ResponseWriter, 
 	w.WriteHeader(http.StatusOK)
 }
 
-func (ghalr *githubActionsLogReceiver) handleWorkflowRun(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
 	var payload []byte
 	var err error
 	if ghalr.config.WebhookSecret == "" {
@@ -101,9 +109,12 @@ func (ghalr *githubActionsLogReceiver) handleWorkflowRun(w http.ResponseWriter, 
 	}
 	switch event := event.(type) {
 	case *github.WorkflowRunEvent:
-		processWorkflowRunEvent(ghalr, w, r, *event)
+		processWorkflowRunEvent(ghalr, w, r.WithContext(ctx), *event)
 	default:
-		w.WriteHeader(http.StatusBadRequest)
+		{
+			ghalr.logger.Debug("Skipping the request because it is not a workflow run event")
+			w.WriteHeader(http.StatusOK)
+		}
 	}
 }
 
@@ -132,17 +143,29 @@ func processWorkflowRunEvent(
 			zap.Time("github.api.rate-limit.core.reset", rateLimits.Core.Reset.Time),
 		)
 	}()
-	workflowJobs, _, err := ghalr.ghClient.Actions.ListWorkflowJobs(
-		r.Context(),
-		event.GetRepo().GetOwner().GetLogin(),
-		event.GetRepo().GetName(),
-		event.GetWorkflowRun().GetID(),
-		nil,
-	)
-	if err != nil {
-		ghalr.logger.Error("Failed to get workflow Jobs", zap.Error(err))
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+	listWorkflowJobsOpts := &github.ListOptions{
+		PerPage: 100,
+	}
+	var allWorkflowJobs []*github.WorkflowJob
+	for {
+		workflowJobs, response, err := ghalr.ghClient.Actions.ListWorkflowJobsAttempt(
+			r.Context(),
+			event.GetRepo().GetOwner().GetLogin(),
+			event.GetRepo().GetName(),
+			event.GetWorkflowRun().GetID(),
+			int64(event.GetWorkflowRun().GetRunAttempt()),
+			listWorkflowJobsOpts,
+		)
+		if err != nil {
+			ghalr.logger.Error("Failed to get workflow Jobs", zap.Error(err))
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		allWorkflowJobs = append(allWorkflowJobs, workflowJobs.Jobs...)
+		if response.NextPage == 0 {
+			break
+		}
+		listWorkflowJobsOpts.Page = response.NextPage
 	}
 	runLogZip, deleteFunc, err := getRunLog(
 		ghalr.runLogCache,
@@ -165,7 +188,7 @@ func processWorkflowRunEvent(
 			ghalr.logger.Warn("Failed to delete run log zip", zap.Error(err))
 		}
 	}()
-	jobs := mapJobs(workflowJobs.Jobs)
+	jobs := mapJobs(allWorkflowJobs)
 	attachRunLog(&runLogZip.Reader, jobs)
 	run := mapRun(event.GetWorkflowRun())
 	repository := mapRepository(event.GetRepo())
@@ -296,7 +319,8 @@ func attachRunLog(rlz *zip.Reader, jobs []Job) {
 		for j, step := range job.Steps {
 			re := logFilenameRegexp(job, step)
 			for _, file := range rlz.File {
-				if re.MatchString(file.Name) {
+				fileName := file.Name
+				if re.MatchString(fileName) {
 					jobs[i].Steps[j].Log = file
 					break
 				}

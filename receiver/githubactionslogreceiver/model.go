@@ -76,15 +76,15 @@ func mapJobs(workflowJobs []*github.WorkflowJob) []Job {
 
 func mapJob(job *github.WorkflowJob) Job {
 	steps := make([]Step, len(job.Steps))
-	for _, s := range job.Steps {
-		steps = append(steps, Step{
+	for i, s := range job.Steps {
+		steps[i] = Step{
 			Name:        s.GetName(),
 			Status:      s.GetStatus(),
 			Conclusion:  s.GetConclusion(),
 			Number:      s.GetNumber(),
 			StartedAt:   s.GetStartedAt().Time,
 			CompletedAt: s.GetCompletedAt().Time,
-		})
+		}
 	}
 	return Job{
 		ID:          job.GetID(),
