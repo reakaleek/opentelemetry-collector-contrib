@@ -48,7 +48,6 @@ func (ghalr *githubActionsLogReceiver) Start(_ context.Context, host component.H
 	if err != nil {
 		return err
 	}
-
 	if err != nil {
 		return fmt.Errorf("failed to create GitHub client: %w", err)
 	}
@@ -78,7 +77,7 @@ func (ghalr *githubActionsLogReceiver) Shutdown(ctx context.Context) error {
 	if ghalr.server == nil {
 		return nil
 	}
-	ghalr.logger.Info("Shutting down receiver")
+	ghalr.logger.Warn("Shutting down receiver")
 	return ghalr.server.Shutdown(ctx)
 }
 
@@ -87,8 +86,15 @@ func (ghalr *githubActionsLogReceiver) handleHealthCheck(w http.ResponseWriter, 
 }
 
 func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	// GitHub webhook must be processed within 10 seconds to have a successful delivery.
+	// This is added so that we get notified if the request takes more than 10 seconds to process and
+	// that the delivery status is correctly reported.
+	// https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#respond-within-10-seconds
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
+	defer func() {
+		ghalr.logger.Error("Request timed out", zap.Error(ctx.Err()))
+		cancel()
+	}()
 	var payload []byte
 	var err error
 	if ghalr.config.WebhookSecret == "" {
@@ -124,23 +130,32 @@ func processWorkflowRunEvent(
 	r *http.Request,
 	event github.WorkflowRunEvent,
 ) {
+	var withWorkflowInfoFields = func(fields ...zap.Field) []zap.Field {
+		workflowInfoFields := []zap.Field{
+			zap.String("repository", event.GetRepo().GetFullName()),
+			zap.Int64("workflow_run.id", event.GetWorkflowRun().GetID()),
+			zap.Int("workflow_run.run_attempt", event.GetWorkflowRun().GetRunAttempt()),
+		}
+		return append(workflowInfoFields, fields...)
+	}
 	if event.GetAction() != "completed" {
-		ghalr.logger.Debug("Skipping the request because it is not a completed workflow run")
+		ghalr.logger.Debug("Skipping the request because it is not a completed workflow run", withWorkflowInfoFields()...)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	ghalr.logger.Info("Received Workflow Run Event", zap.String("github.workflow_run.url", event.GetWorkflowRun().GetHTMLURL()))
-	ghalr.logger.Debug("Workflow Run Event", zap.Any("event", event))
+	ghalr.logger.Info("Starting to process webhook event", withWorkflowInfoFields()...)
 	defer func() {
 		rateLimits, _, err := ghalr.ghClient.RateLimit.Get(r.Context())
 		if err != nil {
-			ghalr.logger.Warn("Failed to get rate limits", zap.Error(err))
+			ghalr.logger.Warn("Failed to get rate limits", withWorkflowInfoFields(zap.Error(err))...)
 		}
 		ghalr.logger.Info(
 			"GitHub Api Rate limits",
-			zap.Int("github.api.rate-limit.core.limit", rateLimits.Core.Limit),
-			zap.Int("github.api.rate-limit.core.remaining", rateLimits.Core.Remaining),
-			zap.Time("github.api.rate-limit.core.reset", rateLimits.Core.Reset.Time),
+			withWorkflowInfoFields(
+				zap.Int("github.api.rate-limit.core.limit", rateLimits.Core.Limit),
+				zap.Int("github.api.rate-limit.core.remaining", rateLimits.Core.Remaining),
+				zap.Time("github.api.rate-limit.core.reset", rateLimits.Core.Reset.Time),
+			)...,
 		)
 	}()
 	listWorkflowJobsOpts := &github.ListOptions{
@@ -157,7 +172,7 @@ func processWorkflowRunEvent(
 			listWorkflowJobsOpts,
 		)
 		if err != nil {
-			ghalr.logger.Error("Failed to get workflow Jobs", zap.Error(err))
+			ghalr.logger.Error("Failed to get workflow Jobs", withWorkflowInfoFields(zap.Error(err))...)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -176,16 +191,16 @@ func processWorkflowRunEvent(
 		event.GetWorkflowRun(),
 	)
 	if err != nil {
-		ghalr.logger.Error("Failed to get run log", zap.Error(err))
+		ghalr.logger.Error("Failed to get run log", withWorkflowInfoFields(zap.Error(err))...)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	defer func() {
 		if err := runLogZip.Close(); err != nil {
-			ghalr.logger.Warn("Failed to close run log zip", zap.Error(err))
+			ghalr.logger.Warn("Failed to close run log zip", withWorkflowInfoFields(zap.Error(err))...)
 		}
 		if err := deleteFunc(); err != nil {
-			ghalr.logger.Warn("Failed to delete run log zip", zap.Error(err))
+			ghalr.logger.Warn("Failed to delete run log zip", withWorkflowInfoFields(zap.Error(err))...)
 		}
 	}()
 	jobs := mapJobs(allWorkflowJobs)
@@ -194,16 +209,17 @@ func processWorkflowRunEvent(
 	repository := mapRepository(event.GetRepo())
 	logs, err := toLogs(repository, run, jobs)
 	if err != nil {
-		ghalr.logger.Error("Failed to convert Jobs to logs", zap.Error(err))
+		ghalr.logger.Error("Failed to convert Jobs to logs", withWorkflowInfoFields(zap.Error(err))...)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	err = ghalr.consumer.ConsumeLogs(r.Context(), logs)
 	if err != nil {
-		ghalr.logger.Error("Failed to consume logs", zap.Error(err))
+		ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	ghalr.logger.Info("Successfully to processed webhook event", withWorkflowInfoFields()...)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -268,7 +284,7 @@ func getRunLog(
 ) (*zip.ReadCloser, func() error, error) {
 	filename := fmt.Sprintf("run-log-%d-%d.zip", workflowRun.ID, workflowRun.GetRunStartedAt().Unix())
 	fp := filepath.Join(os.TempDir(), "run-log-cache", filename)
-	logger.Info("Checking if log exists in cache", zap.String("rlc.path", fp))
+	logger.Debug("Checking if log exists in cache", zap.String("rlc.path", fp))
 	if !cache.Exists(fp) {
 		logURL, _, err := ghClient.Actions.GetWorkflowRunLogs(
 			ctx,
