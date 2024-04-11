@@ -105,7 +105,7 @@ func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *htt
 	}
 	switch event := event.(type) {
 	case *github.WorkflowRunEvent:
-		processWorkflowRunEvent(ghalr, w, r.WithContext(ctx), *event)
+		processWorkflowRunEvent(ghalr, w, r, *event)
 	default:
 		{
 			ghalr.logger.Debug("Skipping the request because it is not a workflow run event")
