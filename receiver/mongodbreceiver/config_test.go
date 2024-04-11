@@ -86,10 +86,10 @@ func TestValidate(t *testing.T) {
 			}
 
 			cfg := &Config{
-				Username:                  tc.username,
-				Password:                  configopaque.String(tc.password),
-				Hosts:                     hosts,
-				ScraperControllerSettings: scraperhelper.NewDefaultScraperControllerSettings(metadata.Type),
+				Username:         tc.username,
+				Password:         configopaque.String(tc.password),
+				Hosts:            hosts,
+				ControllerConfig: scraperhelper.NewDefaultControllerConfig(),
 			}
 			err := component.ValidateConfig(cfg)
 			if tc.expected == nil {
@@ -110,7 +110,7 @@ func TestBadTLSConfigs(t *testing.T) {
 		{
 			desc: "CA file not found",
 			tlsConfig: configtls.ClientConfig{
-				TLSSetting: configtls.Config{
+				Config: configtls.Config{
 					CAFile: "not/a/real/file.pem",
 				},
 				Insecure:           false,
@@ -122,7 +122,7 @@ func TestBadTLSConfigs(t *testing.T) {
 		{
 			desc: "no issues",
 			tlsConfig: configtls.ClientConfig{
-				TLSSetting:         configtls.Config{},
+				Config:             configtls.Config{},
 				Insecure:           false,
 				InsecureSkipVerify: false,
 				ServerName:         "",
@@ -141,8 +141,8 @@ func TestBadTLSConfigs(t *testing.T) {
 						Transport: confignet.TransportTypeTCP,
 					},
 				},
-				ScraperControllerSettings: scraperhelper.NewDefaultScraperControllerSettings(metadata.Type),
-				ClientConfig:              tc.tlsConfig,
+				ControllerConfig: scraperhelper.NewDefaultControllerConfig(),
+				ClientConfig:     tc.tlsConfig,
 			}
 			err := component.ValidateConfig(cfg)
 			if tc.expectError {
@@ -188,7 +188,7 @@ func TestOptionsTLS(t *testing.T) {
 		},
 		ClientConfig: configtls.ClientConfig{
 			Insecure: false,
-			TLSSetting: configtls.Config{
+			Config: configtls.Config{
 				CAFile: caFile,
 			},
 		},
