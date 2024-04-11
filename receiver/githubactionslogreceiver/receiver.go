@@ -19,7 +19,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 )
 
 type githubActionsLogReceiver struct {
@@ -86,15 +85,6 @@ func (ghalr *githubActionsLogReceiver) handleHealthCheck(w http.ResponseWriter, 
 }
 
 func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	// GitHub webhook must be processed within 10 seconds to have a successful delivery.
-	// This is added so that we get notified if the request takes more than 10 seconds to process and
-	// that the delivery status is correctly reported.
-	// https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#respond-within-10-seconds
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer func() {
-		ghalr.logger.Error("Request timed out", zap.Error(ctx.Err()))
-		cancel()
-	}()
 	var payload []byte
 	var err error
 	if ghalr.config.WebhookSecret == "" {
