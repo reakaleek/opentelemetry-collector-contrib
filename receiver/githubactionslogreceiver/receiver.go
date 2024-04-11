@@ -122,9 +122,9 @@ func processWorkflowRunEvent(
 ) {
 	var withWorkflowInfoFields = func(fields ...zap.Field) []zap.Field {
 		workflowInfoFields := []zap.Field{
-			zap.String("repository", event.GetRepo().GetFullName()),
-			zap.Int64("workflow_run.id", event.GetWorkflowRun().GetID()),
-			zap.Int("workflow_run.run_attempt", event.GetWorkflowRun().GetRunAttempt()),
+			zap.String("github.repository", event.GetRepo().GetFullName()),
+			zap.Int64("github.workflow_run.id", event.GetWorkflowRun().GetID()),
+			zap.Int("github.workflow_run.run_attempt", event.GetWorkflowRun().GetRunAttempt()),
 		}
 		return append(workflowInfoFields, fields...)
 	}
@@ -138,15 +138,16 @@ func processWorkflowRunEvent(
 		rateLimits, _, err := ghalr.ghClient.RateLimit.Get(r.Context())
 		if err != nil {
 			ghalr.logger.Warn("Failed to get rate limits", withWorkflowInfoFields(zap.Error(err))...)
+		} else {
+			ghalr.logger.Info(
+				"GitHub Api Rate limits",
+				withWorkflowInfoFields(
+					zap.Int("github.api.rate-limit.core.limit", rateLimits.Core.Limit),
+					zap.Int("github.api.rate-limit.core.remaining", rateLimits.Core.Remaining),
+					zap.Time("github.api.rate-limit.core.reset", rateLimits.Core.Reset.Time),
+				)...,
+			)
 		}
-		ghalr.logger.Info(
-			"GitHub Api Rate limits",
-			withWorkflowInfoFields(
-				zap.Int("github.api.rate-limit.core.limit", rateLimits.Core.Limit),
-				zap.Int("github.api.rate-limit.core.remaining", rateLimits.Core.Remaining),
-				zap.Time("github.api.rate-limit.core.reset", rateLimits.Core.Reset.Time),
-			)...,
-		)
 	}()
 	listWorkflowJobsOpts := &github.ListOptions{
 		PerPage: 100,
