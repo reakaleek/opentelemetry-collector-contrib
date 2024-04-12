@@ -129,6 +129,10 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		New("https://api.github.com/repos/unelastisch/test-workflow-runs/actions/runs/8436609886/logs").
 		Reply(http.StatusFound).
 		AddHeader("Location", logURL)
+	gock.
+		New("https://api.github.com/rate_limit").
+		Reply(200).
+		BodyString(`{"resources":{"core":{"limit":5000,"remaining":4999,"reset":1631539200},"search":{"limit":30,"remaining":30,"reset":1631539200},"graphql":{"limit":5000,"remaining":5000,"reset":1631539200},"integration_manifest":{"limit":5000,"remaining":5000,"reset":1631539200}}}`)
 	logFileNames := []string{
 		"1_Set up job.txt",
 		"2_Run actions_checkout@v2.txt",
@@ -196,23 +200,22 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.True(t, gock.IsDone())
 	assert.Len(t, logFileNames, consumer.LogRecordCount())
-	//assert.Len(t, consumer.AllLogs(), 5)
 	assert.Len(t, consumer.AllLogs(), 1)
-	//for i := 0; i < len(logFileNames); i++ {
-	//	assert.Equal(
-	//		t,
-	//		fmt.Sprintf("Logs of %s", logFileNames[i]),
-	//		consumer.AllLogs()[0].
-	//			ResourceLogs().
-	//			At(0).
-	//			ScopeLogs().
-	//			At(0).
-	//			LogRecords().
-	//			At(i).
-	//			Body().
-	//			Str(),
-	//	)
-	//}
+	for i := 0; i < len(logFileNames); i++ {
+		assert.Equal(
+			t,
+			fmt.Sprintf("Logs of %s", logFileNames[i]),
+			consumer.AllLogs()[0].
+				ResourceLogs().
+				At(0).
+				ScopeLogs().
+				At(0).
+				LogRecords().
+				At(i).
+				Body().
+				Str(),
+		)
+	}
 }
 
 func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
