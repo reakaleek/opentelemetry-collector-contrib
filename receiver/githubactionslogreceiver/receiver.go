@@ -237,7 +237,7 @@ func (ghalr *githubActionsLogReceiver) splitAndConsumeLogsInChunks(ctx context.C
 					newLogRecord := newIll.LogRecords().AppendEmpty()
 					logRecord.CopyTo(newLogRecord)
 				}
-				// Pass the new pdata.Logs instance to the consumer
+				ghalr.logger.Debug("Consuming logs", zap.Int("log_record_count", logs.LogRecordCount()))
 				if err := consumer.ConsumeLogs(ctx, newLogs); err != nil {
 					return err
 				}
