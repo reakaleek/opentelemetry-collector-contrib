@@ -18,7 +18,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type githubActionsLogReceiver struct {
@@ -123,6 +125,7 @@ func processWorkflowRunEvent(
 	var withWorkflowInfoFields = func(fields ...zap.Field) []zap.Field {
 		workflowInfoFields := []zap.Field{
 			zap.String("github.repository", event.GetRepo().GetFullName()),
+			zap.String("github.workflow_run.name", event.GetWorkflowRun().GetName()),
 			zap.Int64("github.workflow_run.id", event.GetWorkflowRun().GetID()),
 			zap.Int("github.workflow_run.run_attempt", event.GetWorkflowRun().GetRunAttempt()),
 		}
@@ -134,21 +137,6 @@ func processWorkflowRunEvent(
 		return
 	}
 	ghalr.logger.Info("Starting to process webhook event", withWorkflowInfoFields()...)
-	defer func() {
-		rateLimits, _, err := ghalr.ghClient.RateLimit.Get(r.Context())
-		if err != nil {
-			ghalr.logger.Warn("Failed to get rate limits", withWorkflowInfoFields(zap.Error(err))...)
-		} else {
-			ghalr.logger.Info(
-				"GitHub Api Rate limits",
-				withWorkflowInfoFields(
-					zap.Int("github.api.rate-limit.core.limit", rateLimits.Core.Limit),
-					zap.Int("github.api.rate-limit.core.remaining", rateLimits.Core.Remaining),
-					zap.Time("github.api.rate-limit.core.reset", rateLimits.Core.Reset.Time),
-				)...,
-			)
-		}
-	}()
 	listWorkflowJobsOpts := &github.ListOptions{
 		PerPage: 100,
 	}
@@ -169,6 +157,17 @@ func processWorkflowRunEvent(
 		}
 		allWorkflowJobs = append(allWorkflowJobs, workflowJobs.Jobs...)
 		if response.NextPage == 0 {
+			limit, _ := strconv.Atoi(response.Header.Get("X-RateLimit-Limit"))
+			remaining, _ := strconv.Atoi(response.Header.Get("X-RateLimit-Remaining"))
+			reset, _ := strconv.ParseInt(response.Header.Get("X-RateLimit-Reset"), 10, 64)
+			ghalr.logger.Info(
+				"GitHub Api Rate limits",
+				withWorkflowInfoFields(
+					zap.Int("github.api.rate-limit.core.limit", limit),
+					zap.Int("github.api.rate-limit.core.remaining", remaining),
+					zap.Time("github.api.rate-limit.core.reset", time.Unix(reset, 0)),
+				)...,
+			)
 			break
 		}
 		listWorkflowJobsOpts.Page = response.NextPage
