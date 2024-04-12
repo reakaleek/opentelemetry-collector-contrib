@@ -206,7 +206,13 @@ func processWorkflowRunEvent(
 	ghalr.logger.Debug("Consuming logs", withWorkflowInfoFields(zap.Int("log_record_count", logs.LogRecordCount()))...)
 	err = ghalr.consumer.ConsumeLogs(r.Context(), logs)
 	if err != nil {
-		ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
+		ghalr.logger.Error(
+			"Failed to consume logs",
+			withWorkflowInfoFields(
+				zap.Error(err),
+				zap.Int("dropped_items", logs.LogRecordCount()),
+			)...,
+		)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
