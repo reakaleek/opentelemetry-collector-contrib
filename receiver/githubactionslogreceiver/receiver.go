@@ -11,6 +11,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/receiver"
 	"go.uber.org/zap"
 	"io"
@@ -203,8 +204,12 @@ func processWorkflowRunEvent(
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	ghalr.logger.Debug("Consuming logs", withWorkflowInfoFields(zap.Int("log_record_count", logs.LogRecordCount()))...)
-	err = ghalr.consumer.ConsumeLogs(r.Context(), logs)
+
+	err = ghalr.splitAndConsumeLogsInChunks(r.Context(), logs, ghalr.consumer, 5000)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	if err != nil {
 		ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -212,6 +217,34 @@ func processWorkflowRunEvent(
 	}
 	ghalr.logger.Info("Successfully to processed webhook event", withWorkflowInfoFields()...)
 	w.WriteHeader(http.StatusOK)
+}
+
+func (ghalr *githubActionsLogReceiver) splitAndConsumeLogsInChunks(ctx context.Context, logs plog.Logs, consumer consumer.Logs, chunkSize int) error {
+	rl := logs.ResourceLogs()
+	for i := 0; i < rl.Len(); i++ {
+		rLogs := rl.At(i)
+		scopeLogs := rLogs.ScopeLogs()
+		for j := 0; j < scopeLogs.Len(); j++ {
+			ilLogs := scopeLogs.At(j)
+			lr := ilLogs.LogRecords()
+			for k := 0; k < lr.Len(); k += chunkSize {
+				newLogs := plog.NewLogs()
+				newRl := newLogs.ResourceLogs().AppendEmpty()
+				rLogs.Resource().Attributes().CopyTo(newRl.Resource().Attributes())
+				newIll := newRl.ScopeLogs().AppendEmpty()
+				for l := k; l < k+chunkSize && l < lr.Len(); l++ {
+					logRecord := lr.At(l)
+					newLogRecord := newIll.LogRecords().AppendEmpty()
+					logRecord.CopyTo(newLogRecord)
+				}
+				// Pass the new pdata.Logs instance to the consumer
+				if err := consumer.ConsumeLogs(ctx, newLogs); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func createGitHubClient(githubAuth GitHubAuth) (*github.Client, error) {
