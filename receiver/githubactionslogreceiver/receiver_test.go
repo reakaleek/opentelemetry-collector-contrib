@@ -129,10 +129,6 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		New("https://api.github.com/repos/unelastisch/test-workflow-runs/actions/runs/8436609886/logs").
 		Reply(http.StatusFound).
 		AddHeader("Location", logURL)
-	gock.
-		New("https://api.github.com/rate_limit").
-		Reply(200).
-		BodyString(`{"resources":{"core":{"limit":5000,"remaining":4999,"reset":1631539200},"search":{"limit":30,"remaining":30,"reset":1631539200},"graphql":{"limit":5000,"remaining":5000,"reset":1631539200},"integration_manifest":{"limit":5000,"remaining":5000,"reset":1631539200}}}`)
 	logFileNames := []string{
 		"1_Set up job.txt",
 		"2_Run actions_checkout@v2.txt",

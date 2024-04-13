@@ -11,9 +11,11 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/receiver"
 	"go.uber.org/zap"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -203,21 +205,35 @@ func processWorkflowRunEvent(
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	ghalr.logger.Debug("Consuming logs", withWorkflowInfoFields(zap.Int("log_record_count", logs.LogRecordCount()))...)
-	err = ghalr.consumer.ConsumeLogs(r.Context(), logs)
-	if err != nil {
-		ghalr.logger.Error(
-			"Failed to consume logs",
-			withWorkflowInfoFields(
-				zap.Error(err),
-				zap.Int("dropped_items", logs.LogRecordCount()),
-			)...,
-		)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+
+	retryableErr := consumererror.Logs{}
+	const maxRetries = 5
+	const baseDelay = 1 * time.Second
+	for i := 0; i < maxRetries; i++ {
+		ghalr.logger.Debug("Consuming logs", withWorkflowInfoFields(zap.Int("log_record_count", logs.LogRecordCount()))...)
+		err = ghalr.consumer.ConsumeLogs(r.Context(), logs)
+		if err == nil {
+			ghalr.logger.Info("Successfully to processed webhook event", withWorkflowInfoFields()...)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if consumererror.IsPermanent(err) {
+			ghalr.logger.Error(
+				"Failed to consume logs",
+				withWorkflowInfoFields(
+					zap.Error(err),
+					zap.Int("dropped_items", logs.LogRecordCount()),
+				)...,
+			)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if errors.As(err, &retryableErr) {
+			logs = retryableErr.Data()
+		}
+		delay := time.Duration(float64(baseDelay) * math.Pow(2, float64(i)))
+		time.Sleep(delay)
 	}
-	ghalr.logger.Info("Successfully to processed webhook event", withWorkflowInfoFields()...)
-	w.WriteHeader(http.StatusOK)
 }
 
 func createGitHubClient(githubAuth GitHubAuth) (*github.Client, error) {
