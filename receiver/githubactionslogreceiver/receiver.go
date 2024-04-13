@@ -109,7 +109,7 @@ func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *htt
 	}
 	switch event := event.(type) {
 	case *github.WorkflowRunEvent:
-		processWorkflowRunEvent(ghalr, w, r, *event)
+		processWorkflowRunEvent(ghalr, w, *event)
 	default:
 		{
 			ghalr.logger.Debug("Skipping the request because it is not a workflow run event")
@@ -121,9 +121,9 @@ func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *htt
 func processWorkflowRunEvent(
 	ghalr *githubActionsLogReceiver,
 	w http.ResponseWriter,
-	r *http.Request,
 	event github.WorkflowRunEvent,
 ) {
+	ctx := context.Background()
 	var withWorkflowInfoFields = func(fields ...zap.Field) []zap.Field {
 		workflowInfoFields := []zap.Field{
 			zap.String("github.repository", event.GetRepo().GetFullName()),
@@ -145,7 +145,7 @@ func processWorkflowRunEvent(
 	var allWorkflowJobs []*github.WorkflowJob
 	for {
 		workflowJobs, response, err := ghalr.ghClient.Actions.ListWorkflowJobsAttempt(
-			r.Context(),
+			ctx,
 			event.GetRepo().GetOwner().GetLogin(),
 			event.GetRepo().GetName(),
 			event.GetWorkflowRun().GetID(),
@@ -177,7 +177,7 @@ func processWorkflowRunEvent(
 	runLogZip, deleteFunc, err := getRunLog(
 		ghalr.runLogCache,
 		ghalr.logger,
-		r.Context(), ghalr.ghClient,
+		ctx, ghalr.ghClient,
 		http.DefaultClient,
 		event.GetRepo(),
 		event.GetWorkflowRun(),
@@ -211,7 +211,7 @@ func processWorkflowRunEvent(
 	const baseDelay = 1 * time.Second
 	for i := 0; i < maxRetries; i++ {
 		ghalr.logger.Debug("Consuming logs", withWorkflowInfoFields(zap.Int("log_record_count", logs.LogRecordCount()))...)
-		err = ghalr.consumer.ConsumeLogs(r.Context(), logs)
+		err = ghalr.consumer.ConsumeLogs(ctx, logs)
 		if err == nil {
 			ghalr.logger.Info("Successfully to processed webhook event", withWorkflowInfoFields()...)
 			w.WriteHeader(http.StatusOK)
@@ -238,9 +238,12 @@ func processWorkflowRunEvent(
 		)
 		ghalr.logger.Debug(
 			"Consuming logs failed. Will retry the request after interval.",
-			zap.Error(err),
-			zap.String("interval", delay.String()),
-			zap.Int("logs_count", logs.LogRecordCount()),
+			withWorkflowInfoFields(
+				zap.Int("retry_count", i),
+				zap.Error(err),
+				zap.String("interval", delay.String()),
+				zap.Int("logs_count", logs.LogRecordCount()),
+			)...,
 		)
 		time.Sleep(delay)
 	}
