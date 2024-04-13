@@ -217,7 +217,8 @@ func processWorkflowRunEvent(
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		if consumererror.IsPermanent(err) {
+		wasLastAttempt := i == maxRetries-1
+		if consumererror.IsPermanent(err) || wasLastAttempt {
 			ghalr.logger.Error(
 				"Failed to consume logs",
 				withWorkflowInfoFields(
@@ -231,7 +232,10 @@ func processWorkflowRunEvent(
 		if errors.As(err, &retryableErr) {
 			logs = retryableErr.Data()
 		}
-		delay := time.Duration(float64(baseDelay) * math.Pow(2, float64(i)))
+		delay := min(
+			time.Duration(float64(baseDelay)*math.Pow(1.5, float64(i))),
+			30*time.Second,
+		)
 		ghalr.logger.Debug(
 			"Consuming logs failed. Will retry the request after interval.",
 			zap.Error(err),
