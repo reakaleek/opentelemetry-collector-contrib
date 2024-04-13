@@ -232,6 +232,12 @@ func processWorkflowRunEvent(
 			logs = retryableErr.Data()
 		}
 		delay := time.Duration(float64(baseDelay) * math.Pow(2, float64(i)))
+		ghalr.logger.Debug(
+			"Consuming logs failed. Will retry the request after interval.",
+			zap.Error(err),
+			zap.String("interval", delay.String()),
+			zap.Int("logs_count", logs.LogRecordCount()),
+		)
 		time.Sleep(delay)
 	}
 }
