@@ -207,7 +207,7 @@ func processWorkflowRunEvent(
 	}
 
 	retryableErr := consumererror.Logs{}
-	const maxRetries = 5
+	const maxRetries = 10
 	const baseDelay = 1 * time.Second
 	for i := 0; i < maxRetries; i++ {
 		ghalr.logger.Debug("Consuming logs", withWorkflowInfoFields(zap.Int("log_record_count", logs.LogRecordCount()))...)
