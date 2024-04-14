@@ -7,15 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bradleyfalzon/ghinstallation/v2"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/google/go-github/v60/github"
 	"github.com/julienschmidt/httprouter"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/consumererror"
+	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/receiver"
 	"go.uber.org/zap"
 	"io"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -205,47 +206,68 @@ func processWorkflowRunEvent(
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	err = ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
+	if err != nil {
+		ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
 
+func (ghalr *githubActionsLogReceiver) consumeLogsWithRetry(ctx context.Context, withWorkflowInfoFields func(fields ...zap.Field) []zap.Field, logs plog.Logs) error {
+	expBackoff := backoff.ExponentialBackOff{
+		MaxElapsedTime:      ghalr.config.Retry.MaxElapsedTime,
+		InitialInterval:     ghalr.config.Retry.InitialInterval,
+		MaxInterval:         ghalr.config.Retry.MaxInterval,
+		RandomizationFactor: backoff.DefaultRandomizationFactor,
+		Multiplier:          backoff.DefaultMultiplier,
+		Stop:                backoff.Stop,
+		Clock:               backoff.SystemClock,
+	}
+	expBackoff.Reset()
 	retryableErr := consumererror.Logs{}
-	const maxRetries = 20
-	const baseDelay = 1 * time.Second
-	for i := 0; i < maxRetries; i++ {
-		ghalr.logger.Debug("Consuming logs", withWorkflowInfoFields(zap.Int("log_record_count", logs.LogRecordCount()))...)
-		err = ghalr.consumer.ConsumeLogs(ctx, logs)
+	for {
+		err := ghalr.consumer.ConsumeLogs(ctx, logs)
 		if err == nil {
-			ghalr.logger.Info("Successfully to processed webhook event", withWorkflowInfoFields()...)
-			w.WriteHeader(http.StatusOK)
-			return
+			return nil
 		}
-		wasLastAttempt := i == maxRetries-1
-		if consumererror.IsPermanent(err) || wasLastAttempt {
+		if consumererror.IsPermanent(err) {
 			ghalr.logger.Error(
-				"Failed to consume logs",
+				"Consuming logs failed. The error is not retryable. Dropping data.",
 				withWorkflowInfoFields(
 					zap.Error(err),
 					zap.Int("dropped_items", logs.LogRecordCount()),
 				)...,
 			)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+			return err
 		}
 		if errors.As(err, &retryableErr) {
 			logs = retryableErr.Data()
 		}
-		delay := min(
-			time.Duration(float64(baseDelay)*math.Pow(1.5, float64(i))),
-			30*time.Second,
-		)
+		backoffDelay := expBackoff.NextBackOff()
+		if backoffDelay == backoff.Stop {
+			ghalr.logger.Error(
+				"Max elapsed time expired. Dropping data.",
+				withWorkflowInfoFields(
+					zap.Error(err),
+					zap.Int("dropped_items", logs.LogRecordCount()),
+				)...,
+			)
+			return err
+		}
 		ghalr.logger.Debug(
 			"Consuming logs failed. Will retry the request after interval.",
 			withWorkflowInfoFields(
-				zap.Int("retry_count", i),
 				zap.Error(err),
-				zap.String("interval", delay.String()),
+				zap.String("interval", backoffDelay.String()),
 				zap.Int("logs_count", logs.LogRecordCount()),
 			)...,
 		)
-		time.Sleep(delay)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context is cancelled or timed out %w", err)
+		case <-time.After(backoffDelay):
+		}
 	}
 }
 

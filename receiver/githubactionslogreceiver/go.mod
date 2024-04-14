@@ -4,6 +4,7 @@ go 1.21.6
 
 require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.10.0
+	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/google/go-github/v60 v60.0.0
 	github.com/h2non/gock v1.2.0
 	github.com/julienschmidt/httprouter v1.3.0

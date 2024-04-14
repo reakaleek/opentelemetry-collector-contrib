@@ -16,6 +16,11 @@ func createDefaultConfig() component.Config {
 		},
 		Path:            defaultPath,
 		HealthCheckPath: defaultHealthCheckPath,
+		Retry: RetryConfig{
+			InitialInterval: defaultRetryInitialInterval,
+			MaxInterval:     defaultRetryMaxInterval,
+			MaxElapsedTime:  defaultRetryMaxElapsedTime,
+		},
 	}
 }
 

@@ -6,12 +6,16 @@ import (
 	"go.opentelemetry.io/collector/config/configopaque"
 	"go.uber.org/multierr"
 	"net/url"
+	"time"
 )
 
 const (
-	defaultPort            = 19419
-	defaultPath            = "/events"
-	defaultHealthCheckPath = "/health"
+	defaultPort                 = 19419
+	defaultPath                 = "/events"
+	defaultHealthCheckPath      = "/health"
+	defaultRetryInitialInterval = 1 * time.Second
+	defaultRetryMaxInterval     = 30 * time.Minute
+	defaultRetryMaxElapsedTime  = 5 * time.Minute
 )
 
 type Config struct {
@@ -20,6 +24,13 @@ type Config struct {
 	HealthCheckPath         string              `mapstructure:"health_check_path"`
 	WebhookSecret           configopaque.String `mapstructure:"webhook_secret"`
 	GitHubAuth              GitHubAuth          `mapstructure:"github_auth"`
+	Retry                   RetryConfig         `mapstructure:"retry"`
+}
+
+type RetryConfig struct {
+	InitialInterval time.Duration `mapstructure:"initial_interval"`
+	MaxInterval     time.Duration `mapstructure:"max_interval"`
+	MaxElapsedTime  time.Duration `mapstructure:"max_elapsed_time"`
 }
 
 type GitHubAuth struct {
