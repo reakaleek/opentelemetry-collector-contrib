@@ -140,6 +140,65 @@ func processWorkflowRunEvent(
 		return
 	}
 	ghalr.logger.Info("Starting to process webhook event", withWorkflowInfoFields()...)
+	logs, err := ghalr.convert(ctx, event, withWorkflowInfoFields)
+	if err != nil {
+		ghalr.logger.Error("Failed to get workflow run data", withWorkflowInfoFields(zap.Error(err))...)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if err != nil {
+		ghalr.logger.Error("Failed to convert Jobs to logs", withWorkflowInfoFields(zap.Error(err))...)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	err = ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
+	if err != nil {
+		ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
+func (ghalr *githubActionsLogReceiver) convert(
+	ctx context.Context,
+	event github.WorkflowRunEvent,
+	withWorkflowInfoFields func(fields ...zap.Field) []zap.Field,
+) (plog.Logs, error) {
+	allWorkflowJobs, err := ghalr.getWorkflowJobs(ctx, event, withWorkflowInfoFields)
+	if err != nil {
+		return plog.Logs{}, fmt.Errorf("failed to get workflow jobs: %w", err)
+	}
+	runLogZip, deleteFunc, err := getRunLog(
+		ghalr.runLogCache,
+		ghalr.logger,
+		ctx, ghalr.ghClient,
+		http.DefaultClient,
+		event.GetRepo(),
+		event.GetWorkflowRun(),
+	)
+	if err != nil {
+		return plog.Logs{}, fmt.Errorf("failed to get run log: %w", err)
+	}
+	defer func() {
+		if err := runLogZip.Close(); err != nil {
+			ghalr.logger.Warn("Failed to close run log zip", withWorkflowInfoFields(zap.Error(err))...)
+		}
+		if err := deleteFunc(); err != nil {
+			ghalr.logger.Warn("Failed to delete run log zip", withWorkflowInfoFields(zap.Error(err))...)
+		}
+	}()
+	jobs := mapJobs(allWorkflowJobs)
+	attachRunLog(&runLogZip.Reader, jobs)
+	run := mapRun(event.GetWorkflowRun())
+	repository := mapRepository(event.GetRepo())
+	return toLogs(repository, run, jobs)
+}
+
+func (ghalr *githubActionsLogReceiver) getWorkflowJobs(
+	ctx context.Context,
+	event github.WorkflowRunEvent,
+	withWorkflowInfoFields func(fields ...zap.Field) []zap.Field,
+) ([]*github.WorkflowJob, error) {
 	listWorkflowJobsOpts := &github.ListOptions{
 		PerPage: 100,
 	}
@@ -154,9 +213,7 @@ func processWorkflowRunEvent(
 			listWorkflowJobsOpts,
 		)
 		if err != nil {
-			ghalr.logger.Error("Failed to get workflow Jobs", withWorkflowInfoFields(zap.Error(err))...)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+			return nil, fmt.Errorf("failed to get workflow Jobs: %w", err)
 		}
 		allWorkflowJobs = append(allWorkflowJobs, workflowJobs.Jobs...)
 		if response.NextPage == 0 {
@@ -175,43 +232,7 @@ func processWorkflowRunEvent(
 		}
 		listWorkflowJobsOpts.Page = response.NextPage
 	}
-	runLogZip, deleteFunc, err := getRunLog(
-		ghalr.runLogCache,
-		ghalr.logger,
-		ctx, ghalr.ghClient,
-		http.DefaultClient,
-		event.GetRepo(),
-		event.GetWorkflowRun(),
-	)
-	if err != nil {
-		ghalr.logger.Error("Failed to get run log", withWorkflowInfoFields(zap.Error(err))...)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	defer func() {
-		if err := runLogZip.Close(); err != nil {
-			ghalr.logger.Warn("Failed to close run log zip", withWorkflowInfoFields(zap.Error(err))...)
-		}
-		if err := deleteFunc(); err != nil {
-			ghalr.logger.Warn("Failed to delete run log zip", withWorkflowInfoFields(zap.Error(err))...)
-		}
-	}()
-	jobs := mapJobs(allWorkflowJobs)
-	attachRunLog(&runLogZip.Reader, jobs)
-	run := mapRun(event.GetWorkflowRun())
-	repository := mapRepository(event.GetRepo())
-	logs, err := toLogs(repository, run, jobs)
-	if err != nil {
-		ghalr.logger.Error("Failed to convert Jobs to logs", withWorkflowInfoFields(zap.Error(err))...)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	err = ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
-	if err != nil {
-		ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	return allWorkflowJobs, nil
 }
 
 func (ghalr *githubActionsLogReceiver) consumeLogsWithRetry(ctx context.Context, withWorkflowInfoFields func(fields ...zap.Field) []zap.Field, logs plog.Logs) error {
@@ -321,6 +342,8 @@ func fetchLog(httpClient *http.Client, logURL string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
+type DeleteFunc func() error
+
 func getRunLog(
 	cache runLogCache,
 	logger *zap.Logger,
@@ -329,7 +352,7 @@ func getRunLog(
 	httpClient *http.Client,
 	repository *github.Repository,
 	workflowRun *github.WorkflowRun,
-) (*zip.ReadCloser, func() error, error) {
+) (*zip.ReadCloser, DeleteFunc, error) {
 	filename := fmt.Sprintf("run-log-%d-%d.zip", workflowRun.ID, workflowRun.GetRunStartedAt().Unix())
 	fp := filepath.Join(os.TempDir(), "run-log-cache", filename)
 	if !cache.Exists(fp) {
