@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -34,16 +35,21 @@ type githubActionsLogReceiver struct {
 	server      *http.Server
 	settings    receiver.CreateSettings
 	ghClient    *github.Client
+	eventQueue  chan *github.WorkflowRunEvent
+	wg          sync.WaitGroup
 }
 
 func newLogsReceiver(cfg *Config, params receiver.CreateSettings, consumer consumer.Logs) *githubActionsLogReceiver {
-	return &githubActionsLogReceiver{
+	ghalr := &githubActionsLogReceiver{
 		config:      cfg,
 		logger:      params.Logger,
 		runLogCache: rlc{},
 		consumer:    consumer,
 		settings:    params,
+		eventQueue:  make(chan *github.WorkflowRunEvent, 100),
 	}
+	go ghalr.processEvents()
+	return ghalr
 }
 
 func (ghalr *githubActionsLogReceiver) Start(_ context.Context, host component.Host) error {
@@ -78,6 +84,8 @@ func (ghalr *githubActionsLogReceiver) Start(_ context.Context, host component.H
 }
 
 func (ghalr *githubActionsLogReceiver) Shutdown(ctx context.Context) error {
+	close(ghalr.eventQueue)
+	ghalr.wg.Wait()
 	if ghalr.server == nil {
 		return nil
 	}
@@ -110,7 +118,10 @@ func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *htt
 	}
 	switch event := event.(type) {
 	case *github.WorkflowRunEvent:
-		processWorkflowRunEvent(ghalr, w, *event)
+		ghalr.wg.Add(1)
+		ghalr.eventQueue <- event // send the event to the queue
+		w.WriteHeader(http.StatusOK)
+		//processWorkflowRunEvent(ghalr, w, *event)
 	default:
 		{
 			ghalr.logger.Debug("Skipping the request because it is not a workflow run event")
@@ -119,9 +130,15 @@ func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *htt
 	}
 }
 
+func (ghalr *githubActionsLogReceiver) processEvents() {
+	for event := range ghalr.eventQueue {
+		processWorkflowRunEvent(ghalr, *event)
+		ghalr.wg.Done()
+	}
+}
+
 func processWorkflowRunEvent(
 	ghalr *githubActionsLogReceiver,
-	w http.ResponseWriter,
 	event github.WorkflowRunEvent,
 ) {
 	ctx := context.Background()
@@ -136,25 +153,21 @@ func processWorkflowRunEvent(
 	}
 	if event.GetAction() != "completed" {
 		ghalr.logger.Debug("Skipping the request because it is not a completed workflow run", withWorkflowInfoFields()...)
-		w.WriteHeader(http.StatusOK)
 		return
 	}
 	ghalr.logger.Info("Starting to process webhook event", withWorkflowInfoFields()...)
 	logs, err := ghalr.convert(ctx, event, withWorkflowInfoFields)
 	if err != nil {
 		ghalr.logger.Error("Failed to get workflow run data", withWorkflowInfoFields(zap.Error(err))...)
-		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	if err != nil {
 		ghalr.logger.Error("Failed to convert Jobs to logs", withWorkflowInfoFields(zap.Error(err))...)
-		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	err = ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
 	if err != nil {
 		ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
-		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 }

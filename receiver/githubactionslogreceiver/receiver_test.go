@@ -175,7 +175,10 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		runLogCache: rlc{},
 		consumer:    consumer,
 		ghClient:    ghClient,
+		eventQueue:  make(chan *github.WorkflowRunEvent, 100),
 	}
+	go ghalr.processEvents()
+
 	workflowRunJsonData, err := os.ReadFile("./testdata/fixtures/workflow_run-completed.event.json")
 	if err != nil {
 		t.Fatal(err)
@@ -191,6 +194,8 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 
 	// act
 	handler.ServeHTTP(w, r)
+	close(ghalr.eventQueue)
+	ghalr.wg.Wait()
 
 	// assert
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -226,6 +231,7 @@ func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
 		runLogCache: rlc{},
 		consumer:    consumertest.NewNop(),
 	}
+	go ghalr.processEvents()
 	workflowRunJsonData := []byte(`{ "action": "requested" }`)
 	workflowRunReader := bytes.NewReader(workflowRunJsonData)
 	w := httptest.NewRecorder()
@@ -238,26 +244,22 @@ func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
 
 	// act
 	handler.ServeHTTP(w, r)
+	close(ghalr.eventQueue)
+	ghalr.wg.Wait()
 
 	// assert
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestStartAndShutDown(t *testing.T) {
-	ghalr := githubActionsLogReceiver{
-		logger: zaptest.NewLogger(t),
-		config: &Config{
-			GitHubAuth: GitHubAuth{
-				Token: "token",
-			},
-			Path:            defaultPath,
-			HealthCheckPath: defaultHealthCheckPath,
+	ghalr := newLogsReceiver(&Config{
+		GitHubAuth: GitHubAuth{
+			Token: "token",
 		},
-		settings: receivertest.NewNopCreateSettings(),
-	}
-	err := ghalr.Shutdown(nil)
-	assert.NoError(t, err)
-	err = ghalr.Start(nil, nil)
+		Path:            defaultPath,
+		HealthCheckPath: defaultHealthCheckPath,
+	}, receivertest.NewNopCreateSettings(), consumertest.NewNop())
+	err := ghalr.Start(nil, nil)
 	assert.NoError(t, err)
 	err = ghalr.Shutdown(nil)
 	assert.NoError(t, err)
