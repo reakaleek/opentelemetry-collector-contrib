@@ -310,7 +310,6 @@ func getRunLog(
 ) (*zip.ReadCloser, func() error, error) {
 	filename := fmt.Sprintf("run-log-%d-%d.zip", workflowRun.ID, workflowRun.GetRunStartedAt().Unix())
 	fp := filepath.Join(os.TempDir(), "run-log-cache", filename)
-	logger.Debug("Checking if log exists in cache", zap.String("rlc.path", fp))
 	if !cache.Exists(fp) {
 		logURL, _, err := ghClient.Actions.GetWorkflowRunLogs(
 			ctx,
