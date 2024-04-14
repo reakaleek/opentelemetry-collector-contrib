@@ -156,6 +156,8 @@ func attachRunAttributes(logRecord *plog.LogRecord, run Run) {
 	logRecord.Attributes().PutStr("github.workflow_run.event", run.Event)
 	logRecord.Attributes().PutStr("github.workflow_run.created_at", pcommon.NewTimestampFromTime(run.CreatedAt).String())
 	logRecord.Attributes().PutStr("github.workflow_run.updated_at", pcommon.NewTimestampFromTime(run.UpdatedAt).String())
+	logRecord.Attributes().PutStr("github.workflow_run.actor.login", run.ActorLogin)
+	logRecord.Attributes().PutInt("github.workflow_run.actor.id", run.ActorID)
 }
 
 func attachJobAttributes(logRecord *plog.LogRecord, job Job) {
@@ -166,6 +168,9 @@ func attachJobAttributes(logRecord *plog.LogRecord, job Job) {
 	logRecord.Attributes().PutStr("github.workflow_job.completed_at", pcommon.NewTimestampFromTime(job.CompletedAt).String())
 	logRecord.Attributes().PutStr("github.workflow_job.conclusion", job.Conclusion)
 	logRecord.Attributes().PutStr("github.workflow_job.status", job.Status)
+	logRecord.Attributes().PutInt("github.workflow_job.runner.group_id", job.RunnerGroupID)
+	logRecord.Attributes().PutStr("github.workflow_job.runner.group_name", job.RunnerGroupName)
+	logRecord.Attributes().PutStr("github.workflow_job.runner.name", job.RunnerName)
 }
 
 func attachStepAttributes(logRecord *plog.LogRecord, step Step) {

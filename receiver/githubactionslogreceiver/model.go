@@ -32,18 +32,23 @@ type Run struct {
 	Event        string
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+	ActorLogin   string
+	ActorID      int64 `json:"actor_id"`
 }
 
 type Job struct {
-	ID          int64
-	Status      string
-	Conclusion  string
-	Name        string
-	Steps       Steps
-	StartedAt   time.Time `json:"started_at"`
-	CompletedAt time.Time `json:"completed_at"`
-	URL         string    `json:"html_url"`
-	RunID       int64     `json:"run_id"`
+	ID              int64
+	Status          string
+	Conclusion      string
+	Name            string
+	Steps           Steps
+	StartedAt       time.Time `json:"started_at"`
+	CompletedAt     time.Time `json:"completed_at"`
+	URL             string    `json:"html_url"`
+	RunID           int64     `json:"run_id"`
+	RunnerName      string    `json:"runner_name"`
+	RunnerGroupName string    `json:"runner_group_name"`
+	RunnerGroupID   int64     `json:"runner_group_id"`
 }
 
 type Step struct {
@@ -87,15 +92,18 @@ func mapJob(job *github.WorkflowJob) Job {
 		}
 	}
 	return Job{
-		ID:          job.GetID(),
-		Status:      job.GetStatus(),
-		Conclusion:  job.GetConclusion(),
-		Name:        job.GetName(),
-		StartedAt:   job.GetStartedAt().Time,
-		CompletedAt: job.GetCompletedAt().Time,
-		URL:         job.GetHTMLURL(),
-		RunID:       job.GetRunID(),
-		Steps:       steps,
+		ID:              job.GetID(),
+		Status:          job.GetStatus(),
+		Conclusion:      job.GetConclusion(),
+		Name:            job.GetName(),
+		StartedAt:       job.GetStartedAt().Time,
+		CompletedAt:     job.GetCompletedAt().Time,
+		URL:             job.GetHTMLURL(),
+		RunID:           job.GetRunID(),
+		Steps:           steps,
+		RunnerName:      job.GetRunnerName(),
+		RunnerGroupName: job.GetRunnerGroupName(),
+		RunnerGroupID:   job.GetRunnerGroupID(),
 	}
 }
 
@@ -112,6 +120,8 @@ func mapRun(run *github.WorkflowRun) Run {
 		Event:        run.GetEvent(),
 		CreatedAt:    run.GetCreatedAt().Time,
 		UpdatedAt:    run.GetUpdatedAt().Time,
+		ActorLogin:   run.GetActor().GetLogin(),
+		ActorID:      run.GetActor().GetID(),
 	}
 }
 
