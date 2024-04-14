@@ -3,6 +3,7 @@ package githubactionslogreceiver
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -12,8 +13,11 @@ import (
 	"github.com/h2non/gock"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/config/configopaque"
+	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/consumer/consumertest"
+	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/receiver/receivertest"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"net/http"
 	"net/http/httptest"
@@ -351,4 +355,131 @@ func TestCreateGitHubClient4(t *testing.T) {
 
 	// assert
 	assert.EqualError(t, err, "could not parse private key: invalid key: Key must be a PEM encoded PKCS1 or PKCS8 key")
+}
+
+type failingConsumer struct {
+	consumertest.Consumer
+	consumeLogsFunc func(context.Context, plog.Logs) error
+}
+
+func (fc *failingConsumer) ConsumeLogs(ctx context.Context, logs plog.Logs) error {
+	return fc.consumeLogsFunc(ctx, logs)
+}
+
+func TestConsumeLogsWithRetry(t *testing.T) {
+	// arrange
+	retryCounter := 0
+	consumer := &failingConsumer{
+		consumeLogsFunc: func(context.Context, plog.Logs) error {
+			retryCounter++
+			if retryCounter == 5 {
+				return nil
+			}
+			return consumererror.NewLogs(fmt.Errorf("error %d", retryCounter), plog.NewLogs())
+		},
+	}
+	ghalr := newLogsReceiver(
+		&Config{
+			GitHubAuth: GitHubAuth{
+				Token: "token",
+			},
+			Path:            defaultPath,
+			HealthCheckPath: defaultHealthCheckPath,
+		},
+		receivertest.NewNopCreateSettings(),
+		consumer,
+	)
+
+	// act
+	err := ghalr.consumeLogsWithRetry(
+		context.Background(),
+		func(fields ...zap.Field) []zap.Field {
+			return make([]zap.Field, 0)
+		},
+		plog.NewLogs(),
+	)
+
+	// assert
+	assert.NoError(t, err)
+	assert.Equal(t, 5, retryCounter)
+}
+
+func TestConsumeLogsWithRetryPermanent(t *testing.T) {
+	// arrange
+	retryCounter := 0
+	consumer := &failingConsumer{
+		consumeLogsFunc: func(context.Context, plog.Logs) error {
+			retryCounter++
+			if retryCounter == 5 {
+				return consumererror.NewPermanent(fmt.Errorf("permanent error"))
+			}
+			return fmt.Errorf("error %d", retryCounter)
+		},
+	}
+	ghalr := newLogsReceiver(
+		&Config{
+			GitHubAuth: GitHubAuth{
+				Token: "token",
+			},
+			Path:            defaultPath,
+			HealthCheckPath: defaultHealthCheckPath,
+		},
+		receivertest.NewNopCreateSettings(),
+		consumer,
+	)
+
+	// act
+	err := ghalr.consumeLogsWithRetry(
+		context.Background(),
+		func(fields ...zap.Field) []zap.Field {
+			return make([]zap.Field, 0)
+		},
+		plog.NewLogs(),
+	)
+
+	// assert
+	assert.Error(t, err)
+	assert.Equal(t, 5, retryCounter)
+}
+
+func TestConsumeLogsWithRetryMaxElapsedTime(t *testing.T) {
+	// arrange
+	retryCounter := 0
+	consumer := &failingConsumer{
+		consumeLogsFunc: func(context.Context, plog.Logs) error {
+			time.Sleep(1 * time.Millisecond)
+			retryCounter++
+			if retryCounter == 5 {
+				return nil
+			}
+			return consumererror.NewLogs(fmt.Errorf("error %d", retryCounter), plog.NewLogs())
+		},
+	}
+	ghalr := newLogsReceiver(
+		&Config{
+			GitHubAuth: GitHubAuth{
+				Token: "token",
+			},
+			Path:            defaultPath,
+			HealthCheckPath: defaultHealthCheckPath,
+			Retry: RetryConfig{
+				MaxElapsedTime: 2 * time.Millisecond,
+			},
+		},
+		receivertest.NewNopCreateSettings(),
+		consumer,
+	)
+
+	// act
+	err := ghalr.consumeLogsWithRetry(
+		context.Background(),
+		func(fields ...zap.Field) []zap.Field {
+			return make([]zap.Field, 0)
+		},
+		plog.NewLogs(),
+	)
+
+	// assert
+	assert.Error(t, err)
+	assert.Equal(t, 2, retryCounter)
 }
