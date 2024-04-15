@@ -46,7 +46,7 @@ func newLogsReceiver(cfg *Config, params receiver.CreateSettings, consumer consu
 		runLogCache: rlc{},
 		consumer:    consumer,
 		settings:    params,
-		eventQueue:  make(chan *github.WorkflowRunEvent, 100),
+		eventQueue:  make(chan *github.WorkflowRunEvent, 1),
 	}
 	go ghalr.processEvents()
 	return ghalr
@@ -120,7 +120,7 @@ func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *htt
 	case *github.WorkflowRunEvent:
 		ghalr.wg.Add(1)
 		ghalr.eventQueue <- event // send the event to the queue
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusAccepted)
 		//processWorkflowRunEvent(ghalr, w, *event)
 	default:
 		{
@@ -132,6 +132,7 @@ func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *htt
 
 func (ghalr *githubActionsLogReceiver) processEvents() {
 	for event := range ghalr.eventQueue {
+		ghalr.logger.Debug("eventQueue size", zap.Int("event_queue_size", len(ghalr.eventQueue)))
 		processWorkflowRunEvent(ghalr, *event)
 		ghalr.wg.Done()
 	}

@@ -175,7 +175,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		runLogCache: rlc{},
 		consumer:    consumer,
 		ghClient:    ghClient,
-		eventQueue:  make(chan *github.WorkflowRunEvent, 100),
+		eventQueue:  make(chan *github.WorkflowRunEvent, 1),
 	}
 	go ghalr.processEvents()
 
@@ -198,7 +198,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 	ghalr.wg.Wait()
 
 	// assert
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusAccepted, w.Code)
 	assert.True(t, gock.IsDone())
 	assert.Len(t, logFileNames, consumer.LogRecordCount())
 	assert.Len(t, consumer.AllLogs(), 1)
@@ -230,8 +230,10 @@ func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
 		},
 		runLogCache: rlc{},
 		consumer:    consumertest.NewNop(),
+		eventQueue:  make(chan *github.WorkflowRunEvent, 1),
 	}
 	go ghalr.processEvents()
+
 	workflowRunJsonData := []byte(`{ "action": "requested" }`)
 	workflowRunReader := bytes.NewReader(workflowRunJsonData)
 	w := httptest.NewRecorder()
@@ -248,7 +250,7 @@ func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
 	ghalr.wg.Wait()
 
 	// assert
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusAccepted, w.Code)
 }
 
 func TestStartAndShutDown(t *testing.T) {
