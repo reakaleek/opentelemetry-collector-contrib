@@ -250,6 +250,7 @@ func (ghalr *githubActionsLogReceiver) consumeLogsWithRetry(ctx context.Context,
 	for {
 		err := ghalr.consumer.ConsumeLogs(ctx, logs)
 		if err == nil {
+			ghalr.logger.Debug("Successfully consumed logs", withWorkflowInfoFields(zap.Int("log_record_count", logs.LogRecordCount()))...)
 			return nil
 		}
 		if consumererror.IsPermanent(err) {
