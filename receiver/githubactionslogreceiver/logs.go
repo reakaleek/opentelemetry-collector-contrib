@@ -14,14 +14,13 @@ import (
 func toLogs(ghalr *githubActionsLogReceiver, repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 	ch := make(chan plog.Logs, 10000)
 	signal := make(chan bool)
-	var stop bool
 	timeout := time.NewTimer(2 * time.Second)
 	go func() {
 		for {
 			select {
 			case <-timeout.C: // Timeout occurred
 				signal <- true
-				return // Exit goroutine after timeout
+				timeout.Reset(2 * time.Second) // Reset timer for next batch
 			}
 		}
 	}()
@@ -41,10 +40,9 @@ func toLogs(ghalr *githubActionsLogReceiver, repository Repository, run Run, job
 				}
 				ghalr.logger.Debug("Consuming logs success", zap.Int("log_record_count", item.LogRecordCount()))
 			}
-			if stop {
-				ghalr.wg2.Done()
-				return
-			}
+			//if stop {
+			//	ghalr.wg2.Done()
+			//}
 		}
 	}()
 	for _, job := range jobs {
@@ -100,7 +98,6 @@ func toLogs(ghalr *githubActionsLogReceiver, repository Repository, run Run, job
 					}
 					previousLogRecord = &logRecord
 				}
-				stop = true
 				return nil
 			}(); err != nil {
 				return plog.Logs{}, err
