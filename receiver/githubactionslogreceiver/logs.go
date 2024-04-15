@@ -14,6 +14,7 @@ import (
 func toLogs(ghalr *githubActionsLogReceiver, repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 	ch := make(chan plog.Logs, 10000)
 	signal := make(chan bool)
+	var stop bool
 	timeout := time.NewTimer(2 * time.Second)
 	go func() {
 		for {
@@ -38,7 +39,9 @@ func toLogs(ghalr *githubActionsLogReceiver, repository Repository, run Run, job
 					return
 				}
 			}
-			ghalr.wg2.Done()
+			if stop {
+				ghalr.wg2.Done()
+			}
 		}
 	}()
 	for _, job := range jobs {
@@ -94,6 +97,7 @@ func toLogs(ghalr *githubActionsLogReceiver, repository Repository, run Run, job
 					}
 					previousLogRecord = &logRecord
 				}
+				stop = true
 				return nil
 			}(); err != nil {
 				return plog.Logs{}, err
