@@ -39,6 +39,7 @@ func toLogs(ghalr *githubActionsLogReceiver, repository Repository, run Run, job
 					ghalr.logger.Error("Failed to consume logs", zap.Error(err))
 					return
 				}
+				ghalr.logger.Debug("Consuming logs success", zap.Int("log_record_count", item.LogRecordCount()))
 			}
 			if stop {
 				ghalr.wg2.Done()
