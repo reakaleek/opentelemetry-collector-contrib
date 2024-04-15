@@ -37,6 +37,7 @@ type githubActionsLogReceiver struct {
 	ghClient    *github.Client
 	eventQueue  chan *github.WorkflowRunEvent
 	wg          sync.WaitGroup
+	wg2         sync.WaitGroup
 }
 
 func newLogsReceiver(cfg *Config, params receiver.CreateSettings, consumer consumer.Logs) *githubActionsLogReceiver {
@@ -157,7 +158,7 @@ func processWorkflowRunEvent(
 		return
 	}
 	ghalr.logger.Info("Starting to process webhook event", withWorkflowInfoFields()...)
-	logs, err := ghalr.convert(ctx, event, withWorkflowInfoFields)
+	_, err := ghalr.convert(ctx, event, withWorkflowInfoFields)
 	if err != nil {
 		ghalr.logger.Error("Failed to get workflow run data", withWorkflowInfoFields(zap.Error(err))...)
 		return
@@ -166,11 +167,11 @@ func processWorkflowRunEvent(
 		ghalr.logger.Error("Failed to convert Jobs to logs", withWorkflowInfoFields(zap.Error(err))...)
 		return
 	}
-	err = ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
-	if err != nil {
-		ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
-		return
-	}
+	//err = ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
+	//if err != nil {
+	//	ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
+	//	return
+	//}
 }
 
 func (ghalr *githubActionsLogReceiver) convert(
@@ -205,7 +206,10 @@ func (ghalr *githubActionsLogReceiver) convert(
 	attachRunLog(&runLogZip.Reader, jobs)
 	run := mapRun(event.GetWorkflowRun())
 	repository := mapRepository(event.GetRepo())
-	return toLogs(repository, run, jobs)
+	ghalr.wg2.Add(2)
+	result, err := toLogs(ghalr, repository, run, jobs)
+	ghalr.wg2.Done()
+	return result, err
 }
 
 func (ghalr *githubActionsLogReceiver) getWorkflowJobs(

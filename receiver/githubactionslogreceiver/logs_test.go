@@ -192,7 +192,7 @@ func TestToLogs(t *testing.T) {
 	}
 
 	// act
-	logs, err := toLogs(Repository{}, Run{}, jobs)
+	logs, err := toLogs(&githubActionsLogReceiver{}, Repository{}, Run{}, jobs)
 
 	// assert
 	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
@@ -240,7 +240,7 @@ func TestToLogsMultipleLogLines(t *testing.T) {
 	}
 
 	// act
-	logs, err := toLogs(Repository{}, Run{}, jobs)
+	logs, err := toLogs(&githubActionsLogReceiver{}, Repository{}, Run{}, jobs)
 
 	// assert
 	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
@@ -290,7 +290,7 @@ func TestToLogsMultineLogWithEmptyLine(t *testing.T) {
 	}
 
 	// act
-	logs, err := toLogs(Repository{}, Run{}, jobs)
+	logs, err := toLogs(&githubActionsLogReceiver{}, Repository{}, Run{}, jobs)
 
 	// assert
 	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
@@ -342,7 +342,7 @@ Foo Bar
 	}
 
 	// act
-	logs, err := toLogs(Repository{}, Run{}, jobs)
+	logs, err := toLogs(&githubActionsLogReceiver{}, Repository{}, Run{}, jobs)
 
 	// assert
 	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
@@ -394,7 +394,7 @@ func TestToLogsStartingWithEmptyLines(t *testing.T) {
 	}
 
 	// act
-	logs, err := toLogs(Repository{}, Run{}, jobs)
+	logs, err := toLogs(&githubActionsLogReceiver{}, Repository{}, Run{}, jobs)
 
 	// assert
 	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()

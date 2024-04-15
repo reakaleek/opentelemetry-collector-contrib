@@ -2,26 +2,46 @@ package githubactionslogreceiver
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.uber.org/zap"
 	"strings"
 	"time"
 )
 
-func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
-	logs := plog.NewLogs()
-	resourceLogs := logs.ResourceLogs().AppendEmpty()
-	resourceAttributes := resourceLogs.Resource().Attributes()
-	resourceAttributes.PutStr("service.name", fmt.Sprintf("github-actions-%s-%s", repository.Org, repository.Name))
-	resourceAttributes.PutStr("github.repository", repository.FullName)
-	resourceAttributes.PutInt("github.workflow_run.id", run.ID)
-	resourceAttributes.PutInt("github.workflow_run.run_attempt", run.RunAttempt)
+func toLogs(ghalr *githubActionsLogReceiver, repository Repository, run Run, jobs []Job) (plog.Logs, error) {
+	ch := make(chan plog.Logs, 10000)
+	signal := make(chan bool)
+	timeout := time.NewTimer(2 * time.Second)
+	go func() {
+		for {
+			select {
+			case <-timeout.C: // Timeout occurred
+				signal <- true
+				return // Exit goroutine after timeout
+			}
+		}
+	}()
+	go func() {
+		for {
+			<-signal // Wait for signal
+			// Process elements from the channel (similar to previous examples)
+			for i := 0; len(ch) > 0; i++ {
+				item := <-ch
+				err := ghalr.consumeLogsWithRetry(context.Background(), func(fields ...zap.Field) []zap.Field {
+					return make([]zap.Field, 0)
+				}, item)
+				if err != nil {
+					ghalr.logger.Error("Failed to consume logs", zap.Error(err))
+					return
+				}
+			}
+			ghalr.wg2.Done()
+		}
+	}()
 	for _, job := range jobs {
-		scopeLogsSlice := resourceLogs.ScopeLogs()
-		scopeLogs := scopeLogsSlice.AppendEmpty()
-		scopeLogs.Scope().SetName("github-actions")
-		logRecords := scopeLogs.LogRecords()
 		for _, step := range job.Steps {
 			if step.Log == nil {
 				continue
@@ -34,11 +54,20 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 				defer f.Close()
 				scanner := bufio.NewScanner(f)
 				var previousLogRecord *plog.LogRecord
+				count := 0
 				for scanner.Scan() {
 					line := scanner.Text()
 					if line == "" {
 						continue
 					}
+					logs := plog.NewLogs()
+					resourceLogs := logs.ResourceLogs().AppendEmpty()
+					resourceAttributes := resourceLogs.Resource().Attributes()
+					resourceAttributes.PutStr("service.name", fmt.Sprintf("github-actions-%s-%s", repository.Org, repository.Name))
+					scopeLogsSlice := resourceLogs.ScopeLogs()
+					scopeLogs := scopeLogsSlice.AppendEmpty()
+					scopeLogs.Scope().SetName("githubactionslogreceiver")
+					logRecords := scopeLogs.LogRecords()
 					if !startsWithTimestamp(line) {
 						if previousLogRecord != nil {
 							appendLineToLogRecordBody(previousLogRecord, line)
@@ -53,6 +82,16 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 					if err := attachData(&logRecord, repository, run, job, step, logLine); err != nil {
 						return fmt.Errorf("failed to attach data to log record: %w", err)
 					}
+
+					ch <- logs
+					count++
+					if count == 10 {
+						signal <- true // Send signal after adding 10 elements
+						count = 0      // Reset count for next batch
+					}
+					if err != nil {
+						return err
+					}
 					previousLogRecord = &logRecord
 				}
 				return nil
@@ -61,7 +100,7 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 			}
 		}
 	}
-	return logs, nil
+	return plog.Logs{}, nil
 }
 
 func appendLineToLogRecordBody(logRecord *plog.LogRecord, line string) {
