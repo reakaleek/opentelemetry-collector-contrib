@@ -206,9 +206,7 @@ func (ghalr *githubActionsLogReceiver) convert(
 	attachRunLog(&runLogZip.Reader, jobs)
 	run := mapRun(event.GetWorkflowRun())
 	repository := mapRepository(event.GetRepo())
-	ghalr.wg2.Add(2)
 	result, err := toLogs(ghalr, repository, run, jobs)
-	ghalr.wg2.Done()
 	return result, err
 }
 

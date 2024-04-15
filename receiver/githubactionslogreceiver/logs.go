@@ -25,6 +25,7 @@ func toLogs(ghalr *githubActionsLogReceiver, repository Repository, run Run, job
 			}
 		}
 	}()
+	ghalr.wg2.Add(1)
 	go func() {
 		for {
 			<-signal // Wait for signal
