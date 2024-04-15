@@ -43,6 +43,7 @@ func toLogs(ghalr *githubActionsLogReceiver, repository Repository, run Run, job
 			}
 			if stop {
 				ghalr.wg2.Done()
+				return
 			}
 		}
 	}()
