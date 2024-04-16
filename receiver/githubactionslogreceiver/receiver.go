@@ -15,7 +15,6 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -160,10 +159,18 @@ func (ghalr *githubActionsLogReceiver) convert(
 	event github.WorkflowRunEvent,
 	withWorkflowInfoFields func(fields ...zap.Field) []zap.Field,
 ) (plog.Logs, error) {
-	allWorkflowJobs, err := ghalr.getWorkflowJobs(ctx, event, withWorkflowInfoFields)
+	allWorkflowJobs, rateLimit, err := getWorkflowJobs(ctx, event, ghalr.ghClient)
 	if err != nil {
 		return plog.Logs{}, fmt.Errorf("failed to get workflow jobs: %w", err)
 	}
+	ghalr.logger.Info(
+		"GitHub Api Rate limits",
+		withWorkflowInfoFields(
+			zap.Int("github.api.rate-limit.core.limit", rateLimit.limit),
+			zap.Int("github.api.rate-limit.core.remaining", rateLimit.remaining),
+			zap.Time("github.api.rate-limit.core.reset", rateLimit.reset),
+		)...,
+	)
 	runLogZip, deleteFunc, err := getRunLog(
 		ghalr.runLogCache,
 		ghalr.logger,
@@ -188,47 +195,6 @@ func (ghalr *githubActionsLogReceiver) convert(
 	run := mapRun(event.GetWorkflowRun())
 	repository := mapRepository(event.GetRepo())
 	return toLogs(repository, run, jobs)
-}
-
-func (ghalr *githubActionsLogReceiver) getWorkflowJobs(
-	ctx context.Context,
-	event github.WorkflowRunEvent,
-	withWorkflowInfoFields func(fields ...zap.Field) []zap.Field,
-) ([]*github.WorkflowJob, error) {
-	listWorkflowJobsOpts := &github.ListOptions{
-		PerPage: 100,
-	}
-	var allWorkflowJobs []*github.WorkflowJob
-	for {
-		workflowJobs, response, err := ghalr.ghClient.Actions.ListWorkflowJobsAttempt(
-			ctx,
-			event.GetRepo().GetOwner().GetLogin(),
-			event.GetRepo().GetName(),
-			event.GetWorkflowRun().GetID(),
-			int64(event.GetWorkflowRun().GetRunAttempt()),
-			listWorkflowJobsOpts,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get workflow Jobs: %w", err)
-		}
-		allWorkflowJobs = append(allWorkflowJobs, workflowJobs.Jobs...)
-		if response.NextPage == 0 {
-			limit, _ := strconv.Atoi(response.Header.Get("X-RateLimit-Limit"))
-			remaining, _ := strconv.Atoi(response.Header.Get("X-RateLimit-Remaining"))
-			reset, _ := strconv.ParseInt(response.Header.Get("X-RateLimit-Reset"), 10, 64)
-			ghalr.logger.Info(
-				"GitHub Api Rate limits",
-				withWorkflowInfoFields(
-					zap.Int("github.api.rate-limit.core.limit", limit),
-					zap.Int("github.api.rate-limit.core.remaining", remaining),
-					zap.Time("github.api.rate-limit.core.reset", time.Unix(reset, 0)),
-				)...,
-			)
-			break
-		}
-		listWorkflowJobsOpts.Page = response.NextPage
-	}
-	return allWorkflowJobs, nil
 }
 
 func (ghalr *githubActionsLogReceiver) consumeLogsWithRetry(ctx context.Context, withWorkflowInfoFields func(fields ...zap.Field) []zap.Field, logs plog.Logs) error {

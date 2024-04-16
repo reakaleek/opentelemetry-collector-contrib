@@ -13,7 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func createGitHubClient(githubAuth GitHubAuth) (*github.Client, error) {
@@ -51,6 +53,56 @@ func createGitHubClient(githubAuth GitHubAuth) (*github.Client, error) {
 	}
 }
 
+type githubRateLimit struct {
+	limit     int
+	remaining int
+	reset     time.Time
+}
+
+func getWorkflowJobs(
+	ctx context.Context,
+	event github.WorkflowRunEvent,
+	ghClient *github.Client,
+) ([]*github.WorkflowJob, githubRateLimit, error) {
+	listWorkflowJobsOpts := &github.ListOptions{
+		PerPage: 100,
+	}
+	rateLimit := githubRateLimit{}
+	var allWorkflowJobs []*github.WorkflowJob
+	for {
+		workflowJobs, response, err := ghClient.Actions.ListWorkflowJobsAttempt(
+			ctx,
+			event.GetRepo().GetOwner().GetLogin(),
+			event.GetRepo().GetName(),
+			event.GetWorkflowRun().GetID(),
+			int64(event.GetWorkflowRun().GetRunAttempt()),
+			listWorkflowJobsOpts,
+		)
+		if err != nil {
+			return nil, githubRateLimit{}, fmt.Errorf("failed to get workflow Jobs: %w", err)
+		}
+		allWorkflowJobs = append(allWorkflowJobs, workflowJobs.Jobs...)
+		if response.NextPage == 0 {
+			rateLimit = parseRateLimitHeader(response, rateLimit)
+			break
+		}
+		listWorkflowJobsOpts.Page = response.NextPage
+	}
+	return allWorkflowJobs, rateLimit, nil
+}
+
+func parseRateLimitHeader(response *github.Response, rateLimit githubRateLimit) githubRateLimit {
+	limit, _ := strconv.Atoi(response.Header.Get("X-RateLimit-Limit"))
+	remaining, _ := strconv.Atoi(response.Header.Get("X-RateLimit-Remaining"))
+	reset, _ := strconv.ParseInt(response.Header.Get("X-RateLimit-Reset"), 10, 64)
+	rateLimit = githubRateLimit{
+		limit:     limit,
+		remaining: remaining,
+		reset:     time.Unix(reset, 0),
+	}
+	return rateLimit
+}
+
 func fetchLog(httpClient *http.Client, logURL string) (io.ReadCloser, error) {
 	req, err := http.NewRequest("GET", logURL, nil)
 	if err != nil {
@@ -66,7 +118,7 @@ func fetchLog(httpClient *http.Client, logURL string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
-type DeleteFunc func() error
+type deleteRunLogFunc func() error
 
 func getRunLog(
 	cache runLogCache,
@@ -76,7 +128,7 @@ func getRunLog(
 	httpClient *http.Client,
 	repository *github.Repository,
 	workflowRun *github.WorkflowRun,
-) (*zip.ReadCloser, DeleteFunc, error) {
+) (*zip.ReadCloser, deleteRunLogFunc, error) {
 	filename := fmt.Sprintf("run-log-%d-%d.zip", workflowRun.ID, workflowRun.GetRunStartedAt().Unix())
 	fp := filepath.Join(os.TempDir(), "run-log-cache", filename)
 	if !cache.Exists(fp) {
