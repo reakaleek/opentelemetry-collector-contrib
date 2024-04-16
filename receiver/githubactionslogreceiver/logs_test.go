@@ -16,6 +16,7 @@ func assertAttributeEquals(t *testing.T, attributes pcommon.Map, key string, exp
 }
 
 func TestAttachRunAttributes(t *testing.T) {
+	// arrange
 	run := Run{
 		ID:           1,
 		Name:         "Run Name",
@@ -31,10 +32,13 @@ func TestAttachRunAttributes(t *testing.T) {
 		ActorLogin:   "reakaleek",
 		ActorID:      1,
 	}
-
 	logRecord := plog.NewLogRecord()
 
-	attachRunAttributes(&logRecord, run)
+	// act
+	err := attachRunAttributes(&logRecord, run)
+
+	// assert
+	assert.NoError(t, err)
 	assert.Equal(t, 13, logRecord.Attributes().Len())
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.id", pcommon.NewValueInt(1))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.name", pcommon.NewValueStr("Run Name"))
@@ -68,10 +72,11 @@ func TestAttachJobAttributes(t *testing.T) {
 	logRecord := plog.NewLogRecord()
 
 	// act
-	attachJobAttributes(&logRecord, job)
+	err := attachJobAttributes(&logRecord, job)
 
 	// assert
-	assert.Equal(t, 10, logRecord.Attributes().Len())
+	assert.NoError(t, err)
+	assert.Equal(t, 7, logRecord.Attributes().Len())
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_job.id", pcommon.NewValueInt(1))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_job.name", pcommon.NewValueStr("Job Name"))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_job.url", pcommon.NewValueStr("https://example.com"))
@@ -79,9 +84,6 @@ func TestAttachJobAttributes(t *testing.T) {
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_job.completed_at", pcommon.NewValueStr(pcommon.NewTimestampFromTime(job.CompletedAt).String()))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_job.conclusion", pcommon.NewValueStr("success"))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_job.status", pcommon.NewValueStr("complete"))
-	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_job.runner.group_id", pcommon.NewValueInt(1))
-	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_job.runner.group_name", pcommon.NewValueStr("Runner Group Name"))
-	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_job.runner.name", pcommon.NewValueStr("Runner Name"))
 }
 
 func TestAttachStepAttributes(t *testing.T) {
@@ -97,9 +99,10 @@ func TestAttachStepAttributes(t *testing.T) {
 	logRecord := plog.NewLogRecord()
 
 	// act
-	attachStepAttributes(&logRecord, step)
+	err := attachStepAttributes(&logRecord, step)
 
 	// assert
+	assert.NoError(t, err)
 	assert.Equal(t, 6, logRecord.Attributes().Len())
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_job.step.name", pcommon.NewValueStr("Step Name"))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_job.step.number", pcommon.NewValueInt(1))

@@ -80,9 +80,15 @@ func attachData(logRecord *plog.LogRecord, repository Repository, run Run, job J
 	logRecord.SetObservedTimestamp(pcommon.NewTimestampFromTime(time.Now()))
 	logRecord.Attributes().PutStr("github.repository", repository.FullName)
 	logRecord.Body().SetStr(logLine.Body)
-	attachRunAttributes(logRecord, run)
-	attachJobAttributes(logRecord, job)
-	attachStepAttributes(logRecord, step)
+	if err := attachRunAttributes(logRecord, run); err != nil {
+		return err
+	}
+	if err := attachJobAttributes(logRecord, job); err != nil {
+		return err
+	}
+	if err := attachStepAttributes(logRecord, step); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -144,40 +150,49 @@ func attachSpanId(logRecord *plog.LogRecord, run Run, job Job, step Step) error 
 	return nil
 }
 
-func attachRunAttributes(logRecord *plog.LogRecord, run Run) {
-	logRecord.Attributes().PutInt("github.workflow_run.id", run.ID)
-	logRecord.Attributes().PutStr("github.workflow_run.name", run.Name)
-	logRecord.Attributes().PutInt("github.workflow_run.run_attempt", run.RunAttempt)
-	logRecord.Attributes().PutInt("github.workflow_run.run_number", run.RunNumber)
-	logRecord.Attributes().PutStr("github.workflow_run.url", fmt.Sprintf("%s/attempts/%d", run.URL, run.RunAttempt))
-	logRecord.Attributes().PutStr("github.workflow_run.conclusion", run.Conclusion)
-	logRecord.Attributes().PutStr("github.workflow_run.status", run.Status)
-	logRecord.Attributes().PutStr("github.workflow_run.run_started_at", pcommon.NewTimestampFromTime(run.RunStartedAt).String())
-	logRecord.Attributes().PutStr("github.workflow_run.event", run.Event)
-	logRecord.Attributes().PutStr("github.workflow_run.created_at", pcommon.NewTimestampFromTime(run.CreatedAt).String())
-	logRecord.Attributes().PutStr("github.workflow_run.updated_at", pcommon.NewTimestampFromTime(run.UpdatedAt).String())
-	logRecord.Attributes().PutStr("github.workflow_run.actor.login", run.ActorLogin)
-	logRecord.Attributes().PutInt("github.workflow_run.actor.id", run.ActorID)
+func attachRunAttributes(logRecord *plog.LogRecord, run Run) error {
+	return logRecord.Attributes().FromRaw(map[string]interface{}{
+		"github.workflow_run.id":             run.ID,
+		"github.workflow_run.name":           run.Name,
+		"github.workflow_run.run_attempt":    run.RunAttempt,
+		"github.workflow_run.run_number":     run.RunNumber,
+		"github.workflow_run.url":            fmt.Sprintf("%s/attempts/%d", run.URL, run.RunAttempt),
+		"github.workflow_run.conclusion":     run.Conclusion,
+		"github.workflow_run.status":         run.Status,
+		"github.workflow_run.run_started_at": pcommon.NewTimestampFromTime(run.RunStartedAt).String(),
+		"github.workflow_run.event":          run.Event,
+		"github.workflow_run.created_at":     pcommon.NewTimestampFromTime(run.CreatedAt).String(),
+		"github.workflow_run.updated_at":     pcommon.NewTimestampFromTime(run.UpdatedAt).String(),
+		"github.workflow_run.actor.login":    run.ActorLogin,
+		"github.workflow_run.actor.id":       run.ActorID,
+	})
 }
 
-func attachJobAttributes(logRecord *plog.LogRecord, job Job) {
-	logRecord.Attributes().PutInt("github.workflow_job.id", job.ID)
-	logRecord.Attributes().PutStr("github.workflow_job.name", job.Name)
-	logRecord.Attributes().PutStr("github.workflow_job.url", job.URL)
-	logRecord.Attributes().PutStr("github.workflow_job.started_at", pcommon.NewTimestampFromTime(job.StartedAt).String())
-	logRecord.Attributes().PutStr("github.workflow_job.completed_at", pcommon.NewTimestampFromTime(job.CompletedAt).String())
-	logRecord.Attributes().PutStr("github.workflow_job.conclusion", job.Conclusion)
-	logRecord.Attributes().PutStr("github.workflow_job.status", job.Status)
-	logRecord.Attributes().PutInt("github.workflow_job.runner.group_id", job.RunnerGroupID)
-	logRecord.Attributes().PutStr("github.workflow_job.runner.group_name", job.RunnerGroupName)
-	logRecord.Attributes().PutStr("github.workflow_job.runner.name", job.RunnerName)
+func attachJobAttributes(logRecord *plog.LogRecord, job Job) error {
+	return logRecord.Attributes().FromRaw(map[string]interface{}{
+		"github.workflow_job.id":           job.ID,
+		"github.workflow_job.name":         job.Name,
+		"github.workflow_job.url":          job.URL,
+		"github.workflow_job.started_at":   pcommon.NewTimestampFromTime(job.StartedAt).String(),
+		"github.workflow_job.completed_at": pcommon.NewTimestampFromTime(job.CompletedAt).String(),
+		"github.workflow_job.conclusion":   job.Conclusion,
+		"github.workflow_job.status":       job.Status,
+	})
 }
 
-func attachStepAttributes(logRecord *plog.LogRecord, step Step) {
-	logRecord.Attributes().PutStr("github.workflow_job.step.name", step.Name)
-	logRecord.Attributes().PutInt("github.workflow_job.step.number", step.Number)
-	logRecord.Attributes().PutStr("github.workflow_job.step.started_at", pcommon.NewTimestampFromTime(step.StartedAt).String())
-	logRecord.Attributes().PutStr("github.workflow_job.step.completed_at", pcommon.NewTimestampFromTime(step.CompletedAt).String())
-	logRecord.Attributes().PutStr("github.workflow_job.step.conclusion", step.Conclusion)
-	logRecord.Attributes().PutStr("github.workflow_job.step.status", step.Status)
+func attachStepAttributes(logRecord *plog.LogRecord, step Step) error {
+	return logRecord.Attributes().FromRaw(map[string]interface{}{
+		"github.workflow_job.step.name":         step.Name,
+		"github.workflow_job.step.number":       step.Number,
+		"github.workflow_job.step.started_at":   pcommon.NewTimestampFromTime(step.StartedAt).String(),
+		"github.workflow_job.step.completed_at": pcommon.NewTimestampFromTime(step.CompletedAt).String(),
+		"github.workflow_job.step.conclusion":   step.Conclusion,
+		"github.workflow_job.step.status":       step.Status,
+	})
+	//logRecord.Attributes().PutStr("github.workflow_job.step.name", step.Name)
+	//logRecord.Attributes().PutInt("github.workflow_job.step.number", step.Number)
+	//logRecord.Attributes().PutStr("github.workflow_job.step.started_at", pcommon.NewTimestampFromTime(step.StartedAt).String())
+	//logRecord.Attributes().PutStr("github.workflow_job.step.completed_at", pcommon.NewTimestampFromTime(step.CompletedAt).String())
+	//logRecord.Attributes().PutStr("github.workflow_job.step.conclusion", step.Conclusion)
+	//logRecord.Attributes().PutStr("github.workflow_job.step.status", step.Status)
 }
