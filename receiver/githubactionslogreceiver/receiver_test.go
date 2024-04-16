@@ -136,6 +136,15 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 				Str(),
 		)
 	}
+	attributesLen := consumer.AllLogs()[0].
+		ResourceLogs().
+		At(0).
+		ScopeLogs().
+		At(0).
+		LogRecords().
+		At(0).
+		Attributes().Len()
+	assert.Equal(t, 30, attributesLen)
 }
 
 func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
