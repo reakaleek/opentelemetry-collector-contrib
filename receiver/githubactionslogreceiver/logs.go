@@ -56,7 +56,7 @@ func processStep(repository Repository, run Run, job Job, step Step, logRecords 
 		if err != nil {
 			return fmt.Errorf("failed to parse log line: %w", err)
 		}
-		if err := attachData(&logRecord, repository, run, job, step, logLine); err != nil {
+		if err := attachData(previousLogRecord, &logRecord, repository, run, job, step, logLine); err != nil {
 			return fmt.Errorf("failed to attach data to log record: %w", err)
 		}
 		previousLogRecord = &logRecord
@@ -68,7 +68,7 @@ func appendLineToLogRecordBody(logRecord *plog.LogRecord, line string) {
 	logRecord.Body().SetStr(logRecord.Body().Str() + "\n" + line)
 }
 
-func attachData(logRecord *plog.LogRecord, repository Repository, run Run, job Job, step Step, logLine LogLine) error {
+func attachData(previousLogRecord *plog.LogRecord, logRecord *plog.LogRecord, repository Repository, run Run, job Job, step Step, logLine LogLine) error {
 	logRecord.SetSeverityNumber(plog.SeverityNumber(logLine.SeverityNumber))
 	if err := attachTraceId(logRecord, run); err != nil {
 		return err
@@ -78,18 +78,45 @@ func attachData(logRecord *plog.LogRecord, repository Repository, run Run, job J
 	}
 	logRecord.SetTimestamp(pcommon.NewTimestampFromTime(logLine.Timestamp))
 	logRecord.SetObservedTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	logRecord.Attributes().PutStr("github.repository", repository.FullName)
 	logRecord.Body().SetStr(logLine.Body)
-	if err := attachRunAttributes(logRecord, run); err != nil {
-		return err
+
+	if previousLogRecord != nil {
+		previousLogRecord.Attributes().CopyTo(logRecord.Attributes())
+		return nil
 	}
-	if err := attachJobAttributes(logRecord, job); err != nil {
-		return err
-	}
-	if err := attachStepAttributes(logRecord, step); err != nil {
-		return err
-	}
-	return nil
+
+	return logRecord.Attributes().FromRaw(map[string]interface{}{
+		"github.repository": repository.FullName,
+
+		"github.workflow_run.id":             run.ID,
+		"github.workflow_run.name":           run.Name,
+		"github.workflow_run.run_attempt":    run.RunAttempt,
+		"github.workflow_run.run_number":     run.RunNumber,
+		"github.workflow_run.url":            fmt.Sprintf("%s/attempts/%d", run.URL, run.RunAttempt),
+		"github.workflow_run.conclusion":     run.Conclusion,
+		"github.workflow_run.status":         run.Status,
+		"github.workflow_run.run_started_at": pcommon.NewTimestampFromTime(run.RunStartedAt).String(),
+		"github.workflow_run.event":          run.Event,
+		"github.workflow_run.created_at":     pcommon.NewTimestampFromTime(run.CreatedAt).String(),
+		"github.workflow_run.updated_at":     pcommon.NewTimestampFromTime(run.UpdatedAt).String(),
+		"github.workflow_run.actor.login":    run.ActorLogin,
+		"github.workflow_run.actor.id":       run.ActorID,
+
+		"github.workflow_job.id":           job.ID,
+		"github.workflow_job.name":         job.Name,
+		"github.workflow_job.url":          job.URL,
+		"github.workflow_job.started_at":   pcommon.NewTimestampFromTime(job.StartedAt).String(),
+		"github.workflow_job.completed_at": pcommon.NewTimestampFromTime(job.CompletedAt).String(),
+		"github.workflow_job.conclusion":   job.Conclusion,
+		"github.workflow_job.status":       job.Status,
+
+		"github.workflow_job.step.name":         step.Name,
+		"github.workflow_job.step.number":       step.Number,
+		"github.workflow_job.step.started_at":   pcommon.NewTimestampFromTime(step.StartedAt).String(),
+		"github.workflow_job.step.completed_at": pcommon.NewTimestampFromTime(step.CompletedAt).String(),
+		"github.workflow_job.step.conclusion":   step.Conclusion,
+		"github.workflow_job.step.status":       step.Status,
+	})
 }
 
 func startsWithTimestamp(line string) bool {

@@ -144,7 +144,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		LogRecords().
 		At(0).
 		Attributes().Len()
-	assert.Equal(t, 30, attributesLen)
+	assert.Equal(t, 27, attributesLen)
 }
 
 func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
