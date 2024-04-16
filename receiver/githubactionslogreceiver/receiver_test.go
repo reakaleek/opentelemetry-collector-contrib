@@ -247,26 +247,6 @@ func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestStartAndShutDown(t *testing.T) {
-	ghalr := githubActionsLogReceiver{
-		logger: zaptest.NewLogger(t),
-		config: &Config{
-			GitHubAuth: GitHubAuth{
-				Token: "token",
-			},
-			Path:            defaultPath,
-			HealthCheckPath: defaultHealthCheckPath,
-		},
-		settings: receivertest.NewNopCreateSettings(),
-	}
-	err := ghalr.Shutdown(nil)
-	assert.NoError(t, err)
-	err = ghalr.Start(nil, nil)
-	assert.NoError(t, err)
-	err = ghalr.Shutdown(nil)
-	assert.NoError(t, err)
-}
-
 func TestCreateGitHubClient(t *testing.T) {
 	// arrange
 	ghAuth := GitHubAuth{

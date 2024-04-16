@@ -14,9 +14,6 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 	resourceLogs := logs.ResourceLogs().AppendEmpty()
 	resourceAttributes := resourceLogs.Resource().Attributes()
 	resourceAttributes.PutStr("service.name", fmt.Sprintf("github-actions-%s-%s", repository.Org, repository.Name))
-	resourceAttributes.PutStr("github.repository", repository.FullName)
-	resourceAttributes.PutInt("github.workflow_run.id", run.ID)
-	resourceAttributes.PutInt("github.workflow_run.run_attempt", run.RunAttempt)
 	for _, job := range jobs {
 		scopeLogsSlice := resourceLogs.ScopeLogs()
 		scopeLogs := scopeLogsSlice.AppendEmpty()
@@ -26,42 +23,45 @@ func toLogs(repository Repository, run Run, jobs []Job) (plog.Logs, error) {
 			if step.Log == nil {
 				continue
 			}
-			if err := func() error {
-				f, err := step.Log.Open()
-				if err != nil {
-					return err
-				}
-				defer f.Close()
-				scanner := bufio.NewScanner(f)
-				var previousLogRecord *plog.LogRecord
-				for scanner.Scan() {
-					line := scanner.Text()
-					if line == "" {
-						continue
-					}
-					if !startsWithTimestamp(line) {
-						if previousLogRecord != nil {
-							appendLineToLogRecordBody(previousLogRecord, line)
-						}
-						continue
-					}
-					logRecord := logRecords.AppendEmpty()
-					logLine, err := parseLogLine(scanner.Text())
-					if err != nil {
-						return fmt.Errorf("failed to parse log line: %w", err)
-					}
-					if err := attachData(&logRecord, repository, run, job, step, logLine); err != nil {
-						return fmt.Errorf("failed to attach data to log record: %w", err)
-					}
-					previousLogRecord = &logRecord
-				}
-				return nil
-			}(); err != nil {
-				return plog.Logs{}, err
+			err := processStep(repository, run, job, step, &logRecords)
+			if err != nil {
+				return plog.Logs{}, fmt.Errorf("failed to process step: %w", err)
 			}
 		}
 	}
 	return logs, nil
+}
+
+func processStep(repository Repository, run Run, job Job, step Step, logRecords *plog.LogRecordSlice) error {
+	f, err := step.Log.Open()
+	if err != nil {
+		return fmt.Errorf("unable to open log file: %w", err)
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	var previousLogRecord *plog.LogRecord
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		if !startsWithTimestamp(line) {
+			if previousLogRecord != nil {
+				appendLineToLogRecordBody(previousLogRecord, line)
+			}
+			continue
+		}
+		logRecord := logRecords.AppendEmpty()
+		logLine, err := parseLogLine(scanner.Text())
+		if err != nil {
+			return fmt.Errorf("failed to parse log line: %w", err)
+		}
+		if err := attachData(&logRecord, repository, run, job, step, logLine); err != nil {
+			return fmt.Errorf("failed to attach data to log record: %w", err)
+		}
+		previousLogRecord = &logRecord
+	}
+	return nil
 }
 
 func appendLineToLogRecordBody(logRecord *plog.LogRecord, line string) {

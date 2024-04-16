@@ -110,7 +110,8 @@ func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *htt
 	}
 	switch event := event.(type) {
 	case *github.WorkflowRunEvent:
-		processWorkflowRunEvent(ghalr, w, *event)
+		ctx := context.WithoutCancel(r.Context())
+		processWorkflowRunEvent(ctx, ghalr, w, *event)
 	default:
 		{
 			ghalr.logger.Debug("Skipping the request because it is not a workflow run event")
@@ -120,11 +121,11 @@ func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *htt
 }
 
 func processWorkflowRunEvent(
+	ctx context.Context,
 	ghalr *githubActionsLogReceiver,
 	w http.ResponseWriter,
 	event github.WorkflowRunEvent,
 ) {
-	ctx := context.Background()
 	var withWorkflowInfoFields = func(fields ...zap.Field) []zap.Field {
 		workflowInfoFields := []zap.Field{
 			zap.String("github.repository", event.GetRepo().GetFullName()),
@@ -151,11 +152,13 @@ func processWorkflowRunEvent(
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	err = ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
-	if err != nil {
-		ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+	if logs.LogRecordCount() > 0 {
+		err = ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
+		if err != nil {
+			ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	}
 }
 
