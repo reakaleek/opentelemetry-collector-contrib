@@ -81,7 +81,7 @@ func (ghalr *githubActionsLogReceiver) Shutdown(ctx context.Context) error {
 	if ghalr.server == nil {
 		return nil
 	}
-	ghalr.logger.Warn("Shutting down receiver")
+	ghalr.logger.Error("Shutting down receiver", zap.Error(ctx.Err()))
 	return ghalr.server.Shutdown(ctx)
 }
 
