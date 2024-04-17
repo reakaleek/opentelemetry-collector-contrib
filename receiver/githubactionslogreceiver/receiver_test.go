@@ -95,6 +95,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 			GitHubAuth: GitHubAuth{
 				Token: "token",
 			},
+			BatchSize: 100,
 		},
 		runLogCache: rlc{},
 		consumer:    consumer,

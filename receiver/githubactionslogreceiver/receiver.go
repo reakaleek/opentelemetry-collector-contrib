@@ -209,7 +209,7 @@ func (ghalr *githubActionsLogReceiver) convert(
 				}
 				defer f.Close()
 				scanner := bufio.NewScanner(f)
-				batchSize := 10000
+				batchSize := ghalr.config.BatchSize
 				batch := make([]string, 0, batchSize)
 				for scanner.Scan() {
 					batch = append(batch, scanner.Text())

@@ -25,6 +25,7 @@ type Config struct {
 	WebhookSecret           configopaque.String `mapstructure:"webhook_secret"`
 	GitHubAuth              GitHubAuth          `mapstructure:"github_auth"`
 	Retry                   RetryConfig         `mapstructure:"retry"`
+	BatchSize               int                 `mapstructure:"batch_size"`
 }
 
 type RetryConfig struct {

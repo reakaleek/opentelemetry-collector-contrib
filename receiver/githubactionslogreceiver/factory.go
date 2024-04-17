@@ -21,6 +21,7 @@ func createDefaultConfig() component.Config {
 			MaxInterval:     defaultRetryMaxInterval,
 			MaxElapsedTime:  defaultRetryMaxElapsedTime,
 		},
+		BatchSize: 10000,
 	}
 }
 
