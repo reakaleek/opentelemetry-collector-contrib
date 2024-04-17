@@ -19,6 +19,7 @@ func attachData(logRecord *plog.LogRecord, repository Repository, run Run, job J
 	logRecord.SetTimestamp(pcommon.NewTimestampFromTime(logLine.Timestamp))
 	logRecord.SetObservedTimestamp(pcommon.NewTimestampFromTime(time.Now()))
 	logRecord.Body().SetStr(logLine.Body)
+	attachRepositoryAttributes(logRecord, repository)
 	attachRunAttributes(logRecord, run)
 	attachJobAttributes(logRecord, job)
 	attachStepAttributes(logRecord, step)
@@ -84,6 +85,10 @@ func attachSpanId(logRecord *plog.LogRecord, run Run, job Job, step Step) error 
 	}
 	logRecord.SetSpanID(spanId)
 	return nil
+}
+
+func attachRepositoryAttributes(logRecord *plog.LogRecord, repository Repository) {
+	logRecord.Attributes().PutStr("github.repository", repository.FullName)
 }
 
 func attachRunAttributes(logRecord *plog.LogRecord, run Run) {

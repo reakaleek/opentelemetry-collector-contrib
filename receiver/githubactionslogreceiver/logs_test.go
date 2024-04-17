@@ -13,6 +13,21 @@ func assertAttributeEquals(t *testing.T, attributes pcommon.Map, key string, exp
 	assert.Equal(t, expected, actual)
 }
 
+func TestAttachRepositoryAttributes(t *testing.T) {
+	// arrange
+	repository := Repository{
+		FullName: "org/repo",
+	}
+	logRecord := plog.NewLogRecord()
+
+	// act
+	attachRepositoryAttributes(&logRecord, repository)
+
+	// assert
+	assert.Equal(t, 1, logRecord.Attributes().Len())
+	assertAttributeEquals(t, logRecord.Attributes(), "github.repository", pcommon.NewValueStr("org/repo"))
+}
+
 func TestAttachRunAttributes(t *testing.T) {
 	// arrange
 	run := Run{
@@ -155,205 +170,3 @@ func TestParseLogErr(t *testing.T) {
 	// assert
 	assert.ErrorContains(t, err, "parsing time \"2021-10-00Z\" as \"2006-01-02T15:04:05.999999999Z07:00\": cannot parse \"Z\" as \"T\"")
 }
-
-//func TestToLogsMultipleLogLines(t *testing.T) {
-//	// arrange
-//	buf := new(bytes.Buffer)
-//	content := `2021-10-01T00:00:00Z Some message
-//2021-10-01T00:00:01Z Another message
-//2021-10-01T00:00:02Z Yet another message`
-//	func() {
-//		writer := zip.NewWriter(buf)
-//		defer writer.Close()
-//		file, err := writer.Create("file.txt")
-//		if err != nil {
-//			t.Fatal(err)
-//		}
-//		_, err = file.Write([]byte(content))
-//		if err != nil {
-//			t.Fatal(err)
-//		}
-//	}()
-//	reader := bytes.NewReader(buf.Bytes())
-//	zipReader, err := zip.NewReader(reader, int64(len(buf.Bytes())))
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//	jobs := []Job{
-//		{
-//			Steps: Steps{
-//				{
-//					Log: zipReader.File[0],
-//				},
-//			},
-//		},
-//	}
-//
-//	// act
-//	logs, err := toLogs(Repository{}, Run{}, jobs)
-//
-//	// assert
-//	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//	assert.Equal(t, 3, logs.LogRecordCount())
-//	assert.Equal(t, "Some message", logRecords.At(0).Body().Str())
-//	assert.Equal(t, "Another message", logRecords.At(1).Body().Str())
-//	assert.Equal(t, "Yet another message", logRecords.At(2).Body().Str())
-//	assert.NoError(t, err)
-//}
-//
-//func TestToLogsMultineLogWithEmptyLine(t *testing.T) {
-//	// arrange
-//	buf := new(bytes.Buffer)
-//	content := `2021-10-01T00:00:00Z Some message
-//2021-10-01T00:00:01Z Another message
-//
-//2021-10-01T00:00:02Z Yet another message
-//`
-//	func() {
-//		writer := zip.NewWriter(buf)
-//		defer writer.Close()
-//		file, err := writer.Create("file.txt")
-//		if err != nil {
-//			t.Fatal(err)
-//		}
-//		_, err = file.Write([]byte(content))
-//		if err != nil {
-//			t.Fatal(err)
-//		}
-//	}()
-//	reader := bytes.NewReader(buf.Bytes())
-//	zipReader, err := zip.NewReader(reader, int64(len(buf.Bytes())))
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//	jobs := []Job{
-//		{
-//			Steps: Steps{
-//				{
-//					Log: zipReader.File[0],
-//				},
-//			},
-//		},
-//	}
-//
-//	// act
-//	logs, err := toLogs(Repository{}, Run{}, jobs)
-//
-//	// assert
-//	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//	assert.Equal(t, 3, logs.LogRecordCount())
-//	assert.Equal(t, "Some message", logRecords.At(0).Body().Str())
-//	assert.Equal(t, "Another message", logRecords.At(1).Body().Str())
-//	assert.Equal(t, "Yet another message", logRecords.At(2).Body().Str())
-//	assert.NoError(t, err)
-//}
-//
-//func TestToLogsMultLineLog(t *testing.T) {
-//	// arrange
-//	buf := new(bytes.Buffer)
-//	content := `2021-10-01T00:00:00Z Some message
-//2021-10-01T00:00:01Z Another message
-//Gibberish
-//Foo Bar
-//
-//2021-10-01T00:00:02Z Yet another message
-//`
-//	func() {
-//		writer := zip.NewWriter(buf)
-//		defer writer.Close()
-//		file, err := writer.Create("file.txt")
-//		if err != nil {
-//			t.Fatal(err)
-//		}
-//		_, err = file.Write([]byte(content))
-//		if err != nil {
-//			t.Fatal(err)
-//		}
-//	}()
-//	reader := bytes.NewReader(buf.Bytes())
-//	zipReader, err := zip.NewReader(reader, int64(len(buf.Bytes())))
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//	jobs := []Job{
-//		{
-//			Steps: Steps{
-//				{
-//					Log: zipReader.File[0],
-//				},
-//			},
-//		},
-//	}
-//
-//	// act
-//	logs, err := toLogs(Repository{}, Run{}, jobs)
-//
-//	// assert
-//	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//	assert.Equal(t, 3, logs.LogRecordCount())
-//	assert.Equal(t, "Some message", logRecords.At(0).Body().Str())
-//	assert.Equal(t, "Another message\nGibberish\nFoo Bar", logRecords.At(1).Body().Str())
-//	assert.Equal(t, "Yet another message", logRecords.At(2).Body().Str())
-//	assert.NoError(t, err)
-//}
-
-//func TestToLogsStartingWithEmptyLines(t *testing.T) {
-//	// arrange
-//	buf := new(bytes.Buffer)
-//	content := `
-//
-//
-//2021-10-01T00:00:00Z Some message
-//2021-10-01T00:00:01Z Another message
-//2021-10-01T00:00:02Z Yet another message
-//`
-//	func() {
-//		writer := zip.NewWriter(buf)
-//		defer writer.Close()
-//		file, err := writer.Create("file.txt")
-//		if err != nil {
-//			t.Fatal(err)
-//		}
-//		_, err = file.Write([]byte(content))
-//		if err != nil {
-//			t.Fatal(err)
-//		}
-//	}()
-//	reader := bytes.NewReader(buf.Bytes())
-//	zipReader, err := zip.NewReader(reader, int64(len(buf.Bytes())))
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//	jobs := []Job{
-//		{
-//			Steps: Steps{
-//				{
-//					Log: zipReader.File[0],
-//				},
-//			},
-//		},
-//	}
-//
-//	// act
-//	logs, err := toLogs(Repository{}, Run{}, jobs)
-//
-//	// assert
-//	logRecords := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//	assert.Equal(t, 3, logs.LogRecordCount())
-//	assert.Equal(t, "Some message", logRecords.At(0).Body().Str())
-//	assert.Equal(t, "Another message", logRecords.At(1).Body().Str())
-//	assert.Equal(t, "Yet another message", logRecords.At(2).Body().Str())
-//	assert.NoError(t, err)
-//}
