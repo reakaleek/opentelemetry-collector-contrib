@@ -27,7 +27,7 @@ func generateTraceID(runID int64, runAttempt int) (pcommon.TraceID, error) {
 // generateStepSpanID generates a span ID from the run ID, run attempt, job name, step name and step number
 // Copied from https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/b45f1739c29039a0314b9c97c3ccc578562df36f/receiver/githubactionsreceiver/trace_event_handling.go#L262
 // to be able to correlate logs with traces
-func generateStepSpanID(runID int64, runAttempt int, jobName, stepName string, stepNumber ...int) (pcommon.SpanID, error) {
+func generateStepSpanID(runID int64, runAttempt int, jobName, stepName string, stepNumber ...int64) (pcommon.SpanID, error) {
 	var input string
 	if len(stepNumber) > 0 && stepNumber[0] > 0 {
 		input = fmt.Sprintf("%d%d%s%s%d", runID, runAttempt, jobName, stepName, stepNumber[0])
