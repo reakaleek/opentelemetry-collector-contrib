@@ -337,7 +337,7 @@ func TestBatchDefault(t *testing.T) {
 	}
 
 	// act
-	err = ghalr.batch(repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
+	err = ghalr.batch(context.Background(), repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
 
 	// assert
 	assert.NoError(t, err)
@@ -396,7 +396,7 @@ func TestBatchMultiLogLines(t *testing.T) {
 	}
 
 	// act
-	err = ghalr.batch(repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
+	err = ghalr.batch(context.Background(), repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
 
 	// assert
 	assert.NoError(t, err)

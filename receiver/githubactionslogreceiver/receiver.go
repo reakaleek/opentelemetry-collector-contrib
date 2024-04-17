@@ -184,14 +184,14 @@ func (ghalr *githubActionsLogReceiver) processWorkflowRunEvent(
 	attachRunLog(&runLogZip.Reader, jobs)
 	run := mapRun(event.GetWorkflowRun())
 	repository := mapRepository(event.GetRepo())
-	err = ghalr.batch(repository, run, jobs, withWorkflowInfoFields)
+	err = ghalr.batch(ctx, repository, run, jobs, withWorkflowInfoFields)
 	if err != nil {
 		return rateLimit, err
 	}
 	return rateLimit, nil
 }
 
-func (ghalr *githubActionsLogReceiver) batch(repository Repository, run Run, jobs []Job, withWorkflowInfoFields func(fields ...zap.Field) []zap.Field) error {
+func (ghalr *githubActionsLogReceiver) batch(ctx context.Context, repository Repository, run Run, jobs []Job, withWorkflowInfoFields func(fields ...zap.Field) []zap.Field) error {
 	for _, job := range jobs {
 		for _, step := range job.Steps {
 			if step.Log == nil {
@@ -219,7 +219,7 @@ func (ghalr *githubActionsLogReceiver) batch(repository Repository, run Run, job
 						continue
 					}
 					if len(batch) == batchSize {
-						err := ghalr.processBatch(withWorkflowInfoFields, batch, repository, run, job, step)
+						err := ghalr.processBatch(ctx, withWorkflowInfoFields, batch, repository, run, job, step)
 						if err != nil {
 							return err
 						}
@@ -228,7 +228,7 @@ func (ghalr *githubActionsLogReceiver) batch(repository Repository, run Run, job
 					batch = append(batch, line)
 				}
 				if len(batch) > 0 {
-					return ghalr.processBatch(withWorkflowInfoFields, batch, repository, run, job, step)
+					return ghalr.processBatch(ctx, withWorkflowInfoFields, batch, repository, run, job, step)
 				}
 				return nil
 			}()
@@ -240,7 +240,7 @@ func (ghalr *githubActionsLogReceiver) batch(repository Repository, run Run, job
 	return nil
 }
 
-func (ghalr *githubActionsLogReceiver) processBatch(withWorkflowInfoFields func(fields ...zap.Field) []zap.Field, batch []string, repository Repository, run Run, job Job, step Step) error {
+func (ghalr *githubActionsLogReceiver) processBatch(ctx context.Context, withWorkflowInfoFields func(fields ...zap.Field) []zap.Field, batch []string, repository Repository, run Run, job Job, step Step) error {
 	logs := plog.NewLogs()
 	resourceLogs := logs.ResourceLogs().AppendEmpty()
 	resourceAttributes := resourceLogs.Resource().Attributes()
@@ -267,7 +267,7 @@ func (ghalr *githubActionsLogReceiver) processBatch(withWorkflowInfoFields func(
 	if logs.LogRecordCount() == 0 {
 		return nil
 	}
-	return ghalr.consumeLogsWithRetry(context.Background(), withWorkflowInfoFields, logs)
+	return ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
 }
 
 func (ghalr *githubActionsLogReceiver) consumeLogsWithRetry(ctx context.Context, withWorkflowInfoFields func(fields ...zap.Field) []zap.Field, logs plog.Logs) error {
