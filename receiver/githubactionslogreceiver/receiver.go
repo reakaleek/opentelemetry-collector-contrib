@@ -1,6 +1,7 @@
 package githubactionslogreceiver
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -133,25 +134,26 @@ func processWorkflowRunEvent(
 		return
 	}
 	ghalr.logger.Info("Starting to process webhook event", withWorkflowInfoFields()...)
-	logs, err := ghalr.convert(ctx, event, withWorkflowInfoFields)
+
+	_, err := ghalr.convert(ctx, event, withWorkflowInfoFields)
 	if err != nil {
 		ghalr.logger.Error("Failed to get workflow run data", withWorkflowInfoFields(zap.Error(err))...)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if err != nil {
-		ghalr.logger.Error("Failed to convert Jobs to logs", withWorkflowInfoFields(zap.Error(err))...)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	if logs.LogRecordCount() > 0 {
-		err = ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
-		if err != nil {
-			ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-	}
+	//if err != nil {
+	//	ghalr.logger.Error("Failed to convert Jobs to logs", withWorkflowInfoFields(zap.Error(err))...)
+	//	w.WriteHeader(http.StatusInternalServerError)
+	//	return
+	//}
+	//if logs.LogRecordCount() > 0 {
+	//	err = ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
+	//	if err != nil {
+	//		ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err))...)
+	//		w.WriteHeader(http.StatusInternalServerError)
+	//		return
+	//	}
+	//}
 }
 
 func (ghalr *githubActionsLogReceiver) convert(
@@ -194,7 +196,69 @@ func (ghalr *githubActionsLogReceiver) convert(
 	attachRunLog(&runLogZip.Reader, jobs)
 	run := mapRun(event.GetWorkflowRun())
 	repository := mapRepository(event.GetRepo())
-	return toLogs(repository, run, jobs)
+	for _, job := range jobs {
+
+		for _, step := range job.Steps {
+			if step.Log == nil {
+				continue
+			}
+			err := func() error {
+				f, err := step.Log.Open()
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				scanner := bufio.NewScanner(f)
+				batchSize := 10000
+				batch := make([]string, 0, batchSize)
+				for scanner.Scan() {
+					batch = append(batch, scanner.Text())
+					if len(batch) == batchSize {
+						err := ghalr.processBatch(batch, repository, run, job, step)
+						if err != nil {
+							return err
+						}
+						batch = batch[:0]
+					}
+				}
+				if len(batch) > 0 {
+					return ghalr.processBatch(batch, repository, run, job, step)
+				}
+				return nil
+			}()
+			if err != nil {
+				return plog.Logs{}, err
+			}
+		}
+	}
+	return plog.Logs{}, nil
+}
+
+func (ghalr *githubActionsLogReceiver) processBatch(batch []string, repository Repository, run Run, job Job, step Step) error {
+	logs := plog.NewLogs()
+	resourceLogs := logs.ResourceLogs().AppendEmpty()
+	resourceAttributes := resourceLogs.Resource().Attributes()
+	resourceAttributes.PutStr("service.name", fmt.Sprintf("github-actions-%s-%s", repository.Org, repository.Name))
+	scopeLogsSlice := resourceLogs.ScopeLogs()
+	scopeLogs := scopeLogsSlice.AppendEmpty()
+	scopeLogs.Scope().SetName("github-actions")
+	logRecords := scopeLogs.LogRecords()
+
+	for _, line := range batch {
+		logRecord := logRecords.AppendEmpty()
+		logLine, err := parseLogLine(line)
+		if err != nil {
+			ghalr.logger.Error("Failed to parse log line", zap.Error(err))
+			continue
+		}
+		if err := attachData(nil, &logRecord, repository, run, job, step, logLine); err != nil {
+			ghalr.logger.Error("Failed to attach data to log record", zap.Error(err))
+		}
+	}
+	return ghalr.consumeLogsWithRetry(context.Background(), func(fields ...zap.Field) []zap.Field {
+		return make([]zap.Field, 0)
+	}, logs)
+
 }
 
 func (ghalr *githubActionsLogReceiver) consumeLogsWithRetry(ctx context.Context, withWorkflowInfoFields func(fields ...zap.Field) []zap.Field, logs plog.Logs) error {

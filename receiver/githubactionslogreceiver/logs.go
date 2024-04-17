@@ -52,7 +52,7 @@ func processStep(repository Repository, run Run, job Job, step Step, logRecords 
 			continue
 		}
 		logRecord := logRecords.AppendEmpty()
-		logLine, err := parseLogLine(scanner.Text())
+		logLine, err := parseLogLine(line)
 		if err != nil {
 			return fmt.Errorf("failed to parse log line: %w", err)
 		}
@@ -216,10 +216,4 @@ func attachStepAttributes(logRecord *plog.LogRecord, step Step) error {
 		"github.workflow_job.step.conclusion":   step.Conclusion,
 		"github.workflow_job.step.status":       step.Status,
 	})
-	//logRecord.Attributes().PutStr("github.workflow_job.step.name", step.Name)
-	//logRecord.Attributes().PutInt("github.workflow_job.step.number", step.Number)
-	//logRecord.Attributes().PutStr("github.workflow_job.step.started_at", pcommon.NewTimestampFromTime(step.StartedAt).String())
-	//logRecord.Attributes().PutStr("github.workflow_job.step.completed_at", pcommon.NewTimestampFromTime(step.CompletedAt).String())
-	//logRecord.Attributes().PutStr("github.workflow_job.step.conclusion", step.Conclusion)
-	//logRecord.Attributes().PutStr("github.workflow_job.step.status", step.Status)
 }
