@@ -214,7 +214,7 @@ func (ghalr *githubActionsLogReceiver) convert(
 				for scanner.Scan() {
 					batch = append(batch, scanner.Text())
 					if len(batch) == batchSize {
-						err := ghalr.processBatch(batch, repository, run, job, step)
+						err := ghalr.processBatch(withWorkflowInfoFields, batch, repository, run, job, step)
 						if err != nil {
 							return err
 						}
@@ -222,7 +222,7 @@ func (ghalr *githubActionsLogReceiver) convert(
 					}
 				}
 				if len(batch) > 0 {
-					return ghalr.processBatch(batch, repository, run, job, step)
+					return ghalr.processBatch(withWorkflowInfoFields, batch, repository, run, job, step)
 				}
 				return nil
 			}()
@@ -234,7 +234,7 @@ func (ghalr *githubActionsLogReceiver) convert(
 	return plog.Logs{}, nil
 }
 
-func (ghalr *githubActionsLogReceiver) processBatch(batch []string, repository Repository, run Run, job Job, step Step) error {
+func (ghalr *githubActionsLogReceiver) processBatch(withWorkflowInfoFields func(fields ...zap.Field) []zap.Field, batch []string, repository Repository, run Run, job Job, step Step) error {
 	logs := plog.NewLogs()
 	resourceLogs := logs.ResourceLogs().AppendEmpty()
 	resourceAttributes := resourceLogs.Resource().Attributes()
@@ -261,9 +261,7 @@ func (ghalr *githubActionsLogReceiver) processBatch(batch []string, repository R
 			ghalr.logger.Error("Failed to attach data to log record", zap.Error(err))
 		}
 	}
-	return ghalr.consumeLogsWithRetry(context.Background(), func(fields ...zap.Field) []zap.Field {
-		return make([]zap.Field, 0)
-	}, logs)
+	return ghalr.consumeLogsWithRetry(context.Background(), withWorkflowInfoFields, logs)
 
 }
 
