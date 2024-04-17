@@ -245,6 +245,12 @@ func (ghalr *githubActionsLogReceiver) processBatch(batch []string, repository R
 	logRecords := scopeLogs.LogRecords()
 
 	for _, line := range batch {
+
+		if !startsWithTimestamp(line) {
+			ghalr.logger.Warn("TODO: Skipping line because it does not start with a timestamp", zap.String("line", line)
+			continue
+		}
+
 		logRecord := logRecords.AppendEmpty()
 		logLine, err := parseLogLine(line)
 		if err != nil {
