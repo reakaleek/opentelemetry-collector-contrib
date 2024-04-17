@@ -95,7 +95,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 			GitHubAuth: GitHubAuth{
 				Token: "token",
 			},
-			BatchSize: 100,
+			BatchSize: 2,
 		},
 		runLogCache: rlc{},
 		consumer:    consumer,
@@ -121,31 +121,16 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.True(t, gock.IsDone())
 	assert.Len(t, logFileNames, consumer.LogRecordCount())
-	//assert.Len(t, consumer.AllLogs(), 1)
-	//for i := 0; i < len(logFileNames); i++ {
-	//	assert.Equal(
-	//		t,
-	//		fmt.Sprintf("Logs of %s", logFileNames[i]),
-	//		consumer.AllLogs()[0].
-	//			ResourceLogs().
-	//			At(0).
-	//			ScopeLogs().
-	//			At(0).
-	//			LogRecords().
-	//			At(i).
-	//			Body().
-	//			Str(),
-	//	)
-	//}
-	//attributesLen := consumer.AllLogs()[0].
-	//	ResourceLogs().
-	//	At(0).
-	//	ScopeLogs().
-	//	At(0).
-	//	LogRecords().
-	//	At(0).
-	//	Attributes().Len()
-	//assert.Equal(t, 27, attributesLen)
+	assert.Len(t, consumer.AllLogs(), 10)
+	attributesLen := consumer.AllLogs()[0].
+		ResourceLogs().
+		At(0).
+		ScopeLogs().
+		At(0).
+		LogRecords().
+		At(0).
+		Attributes().Len()
+	assert.Equal(t, 23, attributesLen)
 }
 
 func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
@@ -302,4 +287,123 @@ func TestConsumeLogsWithRetryMaxElapsedTime(t *testing.T) {
 	// assert
 	assert.Error(t, err)
 	assert.Equal(t, 2, retryCounter)
+}
+
+func TestBatchDefault(t *testing.T) {
+	// arrange
+	buf := new(bytes.Buffer)
+	content := `2021-10-01T00:00:00Z Some message
+2021-10-01T00:00:01Z Another message
+2021-10-01T00:00:02Z Yet another message`
+	func() {
+		writer := zip.NewWriter(buf)
+		defer writer.Close()
+		file, err := writer.Create("file.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = file.Write([]byte(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+	reader := bytes.NewReader(buf.Bytes())
+	zipReader, err := zip.NewReader(reader, int64(len(buf.Bytes())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	logsConsumer := new(consumertest.LogsSink)
+	ghalr := githubActionsLogReceiver{
+		config: &Config{
+			BatchSize: 2,
+		},
+		logger:   zaptest.NewLogger(t),
+		consumer: logsConsumer,
+	}
+	repository := Repository{
+		FullName: "org/repo",
+		Org:      "org",
+		Name:     "repo",
+	}
+	run := Run{}
+	jobs := []Job{
+		{
+			Steps: Steps{
+				{
+					Log: zipReader.File[0],
+				},
+			},
+		},
+	}
+
+	// act
+	err = ghalr.batch(repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
+
+	// assert
+	assert.NoError(t, err)
+	assert.Equal(t, 3, logsConsumer.LogRecordCount())
+}
+
+func TestBatchMultiLogLines(t *testing.T) {
+	// arrange
+	buf := new(bytes.Buffer)
+	content := `2021-10-01T00:00:00Z Some message
+2021-10-01T00:00:01Z Another message
+	Gibberish
+	Foo Bar
+
+2021-10-01T00:00:02Z Yet another message
+	`
+	func() {
+		writer := zip.NewWriter(buf)
+		defer writer.Close()
+		file, err := writer.Create("file.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = file.Write([]byte(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+	reader := bytes.NewReader(buf.Bytes())
+	zipReader, err := zip.NewReader(reader, int64(len(buf.Bytes())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	logsConsumer := new(consumertest.LogsSink)
+	ghalr := githubActionsLogReceiver{
+		config: &Config{
+			BatchSize: 2,
+		},
+		logger:   zaptest.NewLogger(t),
+		consumer: logsConsumer,
+	}
+	repository := Repository{
+		FullName: "org/repo",
+		Org:      "org",
+		Name:     "repo",
+	}
+	run := Run{}
+	jobs := []Job{
+		{
+			Steps: Steps{
+				{
+					Log: zipReader.File[0],
+				},
+			},
+		},
+	}
+
+	// act
+	err = ghalr.batch(repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
+
+	// assert
+	assert.NoError(t, err)
+	assert.Equal(t, 3, logsConsumer.LogRecordCount())
+	assert.Equal(t, 2, logsConsumer.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().Len())
+	assert.Equal(t, 1, logsConsumer.AllLogs()[1].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().Len())
+	assert.Equal(t, "Some message", logsConsumer.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Body().Str())
+	assert.Equal(t, "Another message\n\tGibberish\n\tFoo Bar", logsConsumer.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(1).Body().Str())
+	assert.Equal(t, "Yet another message", logsConsumer.AllLogs()[1].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Body().Str())
 }
