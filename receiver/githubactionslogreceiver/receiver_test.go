@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/receiver/receiverhelper"
 	"go.opentelemetry.io/collector/receiver/receivertest"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
@@ -89,6 +90,10 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		Body(reader)
 	ghClient := github.NewClient(nil)
 	consumer := new(consumertest.LogsSink)
+	obsrecv, err := receiverhelper.NewObsReport(receiverhelper.ObsReportSettings{ReceiverCreateSettings: receivertest.NewNopCreateSettings()})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ghalr := githubActionsLogReceiver{
 		logger: zaptest.NewLogger(t),
 		config: &Config{
@@ -100,6 +105,7 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 		runLogCache: rlc{},
 		consumer:    consumer,
 		ghClient:    ghClient,
+		obsrecv:     obsrecv,
 	}
 	workflowRunJsonData, err := os.ReadFile("./testdata/fixtures/workflow_run-completed.event.json")
 	if err != nil {
@@ -135,6 +141,10 @@ func TestWorkflowRunHandlerCompletedAction(t *testing.T) {
 
 func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
 	// arrange
+	obsrecv, err := receiverhelper.NewObsReport(receiverhelper.ObsReportSettings{ReceiverCreateSettings: receivertest.NewNopCreateSettings()})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ghalr := githubActionsLogReceiver{
 		logger: zaptest.NewLogger(t),
 		config: &Config{
@@ -144,6 +154,7 @@ func TestWorkflowRunHandlerRequestedAction(t *testing.T) {
 		},
 		runLogCache: rlc{},
 		consumer:    consumertest.NewNop(),
+		obsrecv:     obsrecv,
 	}
 	workflowRunJsonData := []byte(`{ "action": "requested" }`)
 	workflowRunReader := bytes.NewReader(workflowRunJsonData)
@@ -183,7 +194,7 @@ func TestConsumeLogsWithRetry(t *testing.T) {
 			return consumererror.NewLogs(fmt.Errorf("error %d", retryCounter), plog.NewLogs())
 		},
 	}
-	ghalr := newLogsReceiver(
+	ghalr, err := newLogsReceiver(
 		&Config{
 			GitHubAuth: GitHubAuth{
 				Token: "token",
@@ -196,7 +207,7 @@ func TestConsumeLogsWithRetry(t *testing.T) {
 	)
 
 	// act
-	err := ghalr.consumeLogsWithRetry(
+	err = ghalr.consumeLogsWithRetry(
 		context.Background(),
 		func(fields ...zap.Field) []zap.Field {
 			return make([]zap.Field, 0)
@@ -221,7 +232,7 @@ func TestConsumeLogsWithRetryPermanent(t *testing.T) {
 			return fmt.Errorf("error %d", retryCounter)
 		},
 	}
-	ghalr := newLogsReceiver(
+	ghalr, err := newLogsReceiver(
 		&Config{
 			GitHubAuth: GitHubAuth{
 				Token: "token",
@@ -234,7 +245,7 @@ func TestConsumeLogsWithRetryPermanent(t *testing.T) {
 	)
 
 	// act
-	err := ghalr.consumeLogsWithRetry(
+	err = ghalr.consumeLogsWithRetry(
 		context.Background(),
 		func(fields ...zap.Field) []zap.Field {
 			return make([]zap.Field, 0)
@@ -260,7 +271,7 @@ func TestConsumeLogsWithRetryMaxElapsedTime(t *testing.T) {
 			return consumererror.NewLogs(fmt.Errorf("error %d", retryCounter), plog.NewLogs())
 		},
 	}
-	ghalr := newLogsReceiver(
+	ghalr, err := newLogsReceiver(
 		&Config{
 			GitHubAuth: GitHubAuth{
 				Token: "token",
@@ -276,7 +287,7 @@ func TestConsumeLogsWithRetryMaxElapsedTime(t *testing.T) {
 	)
 
 	// act
-	err := ghalr.consumeLogsWithRetry(
+	err = ghalr.consumeLogsWithRetry(
 		context.Background(),
 		func(fields ...zap.Field) []zap.Field {
 			return make([]zap.Field, 0)
@@ -337,11 +348,12 @@ func TestBatchDefault(t *testing.T) {
 	}
 
 	// act
-	err = ghalr.batch(context.Background(), repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
+	count, err := ghalr.batch(context.Background(), repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
 
 	// assert
 	assert.NoError(t, err)
 	assert.Equal(t, 3, logsConsumer.LogRecordCount())
+	assert.Equal(t, 3, count)
 }
 
 func TestBatchMultiLogLines(t *testing.T) {
@@ -396,11 +408,12 @@ func TestBatchMultiLogLines(t *testing.T) {
 	}
 
 	// act
-	err = ghalr.batch(context.Background(), repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
+	count, err := ghalr.batch(context.Background(), repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
 
 	// assert
 	assert.NoError(t, err)
 	assert.Equal(t, 3, logsConsumer.LogRecordCount())
+	assert.Equal(t, 3, count)
 	assert.Equal(t, 2, logsConsumer.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().Len())
 	assert.Equal(t, 1, logsConsumer.AllLogs()[1].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().Len())
 	assert.Equal(t, "Some message", logsConsumer.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Body().Str())
