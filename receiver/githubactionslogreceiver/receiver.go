@@ -143,15 +143,12 @@ func handleWorkflowRunEvent(
 		return
 	}
 	ghalr.logger.Info("Starting to process webhook event", withWorkflowInfoFields()...)
-	ghalr.obsrecv.StartLogsOp(ctx)
-	numReceivedLogRecords, rateLimit, err := ghalr.processWorkflowRunEvent(ctx, withWorkflowInfoFields, event)
+	rateLimit, err := ghalr.processWorkflowRunEvent(ctx, withWorkflowInfoFields, event)
 	if err != nil {
-		ghalr.obsrecv.EndLogsOp(ctx, "github-actions", numReceivedLogRecords, err)
 		ghalr.logger.Error("Failed to process webhook event", withWorkflowInfoFields(zap.Error(err))...)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	ghalr.logger.Info("Successfully consumed logs", withWorkflowInfoFields(zap.Int("log_record_count", numReceivedLogRecords))...)
 	ghalr.logger.Info(
 		"GitHub Api Rate limits",
 		withWorkflowInfoFields(
@@ -160,17 +157,16 @@ func handleWorkflowRunEvent(
 			zap.Time("github.api.rate-limit.core.reset", rateLimit.reset),
 		)...,
 	)
-	ghalr.obsrecv.EndLogsOp(ctx, "github-actions", numReceivedLogRecords, err)
 }
 
 func (ghalr *githubActionsLogReceiver) processWorkflowRunEvent(
 	ctx context.Context,
 	withWorkflowInfoFields func(fields ...zap.Field) []zap.Field,
 	event github.WorkflowRunEvent,
-) (int, githubRateLimit, error) {
+) (githubRateLimit, error) {
 	allWorkflowJobs, rateLimit, err := getWorkflowJobs(ctx, event, ghalr.ghClient)
 	if err != nil {
-		return 0, rateLimit, fmt.Errorf("failed to get workflow jobs: %w", err)
+		return rateLimit, fmt.Errorf("failed to get workflow jobs: %w", err)
 	}
 	runLogZip, deleteFunc, err := getRunLog(
 		ghalr.runLogCache,
@@ -181,7 +177,7 @@ func (ghalr *githubActionsLogReceiver) processWorkflowRunEvent(
 		event.GetWorkflowRun(),
 	)
 	if err != nil {
-		return 0, rateLimit, fmt.Errorf("failed to get run log: %w", err)
+		return rateLimit, fmt.Errorf("failed to get run log: %w", err)
 	}
 	defer func() {
 		if err := runLogZip.Close(); err != nil {
@@ -195,14 +191,20 @@ func (ghalr *githubActionsLogReceiver) processWorkflowRunEvent(
 	attachRunLog(&runLogZip.Reader, jobs)
 	run := mapRun(event.GetWorkflowRun())
 	repository := mapRepository(event.GetRepo())
-	numReceivedLogRecords, err := ghalr.batch(ctx, repository, run, jobs, withWorkflowInfoFields)
+	err = ghalr.batch(ctx, repository, run, jobs, withWorkflowInfoFields)
 	if err != nil {
-		return 0, rateLimit, err
+		return rateLimit, err
 	}
-	return numReceivedLogRecords, rateLimit, nil
+	return rateLimit, nil
 }
 
-func (ghalr *githubActionsLogReceiver) batch(ctx context.Context, repository Repository, run Run, jobs []Job, withWorkflowInfoFields func(fields ...zap.Field) []zap.Field) (int, error) {
+func (ghalr *githubActionsLogReceiver) batch(
+	ctx context.Context,
+	repository Repository,
+	run Run,
+	jobs []Job,
+	withWorkflowInfoFields func(fields ...zap.Field) []zap.Field,
+) error {
 	logsRecordCount := 0
 	for _, job := range jobs {
 		for _, step := range job.Steps {
@@ -250,11 +252,11 @@ func (ghalr *githubActionsLogReceiver) batch(ctx context.Context, repository Rep
 				return nil
 			}()
 			if err != nil {
-				return 0, err
+				return err
 			}
 		}
 	}
-	return logsRecordCount, nil
+	return nil
 }
 
 func (ghalr *githubActionsLogReceiver) processBatch(ctx context.Context, withWorkflowInfoFields func(fields ...zap.Field) []zap.Field, batch []string, repository Repository, run Run, job Job, step Step) (int, error) {
@@ -279,7 +281,14 @@ func (ghalr *githubActionsLogReceiver) processBatch(ctx context.Context, withWor
 	if logs.LogRecordCount() == 0 {
 		return 0, nil
 	}
+	ghalr.obsrecv.StartLogsOp(ctx)
 	err := ghalr.consumeLogsWithRetry(ctx, withWorkflowInfoFields, logs)
+	if err != nil {
+		ghalr.logger.Error("Failed to consume logs", withWorkflowInfoFields(zap.Error(err), zap.Int("dropped_items", logs.LogRecordCount()))...)
+	} else {
+		ghalr.logger.Info("Successfully consumed logs", withWorkflowInfoFields(zap.Int("log_record_count", logs.LogRecordCount()))...)
+	}
+	ghalr.obsrecv.EndLogsOp(ctx, "github-actions", logs.LogRecordCount(), err)
 	return logs.LogRecordCount(), err
 }
 

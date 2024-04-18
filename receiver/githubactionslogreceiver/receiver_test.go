@@ -324,12 +324,17 @@ func TestBatchDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	logsConsumer := new(consumertest.LogsSink)
+	obsrecv, err := receiverhelper.NewObsReport(receiverhelper.ObsReportSettings{ReceiverCreateSettings: receivertest.NewNopCreateSettings()})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ghalr := githubActionsLogReceiver{
 		config: &Config{
 			BatchSize: 2,
 		},
 		logger:   zaptest.NewLogger(t),
 		consumer: logsConsumer,
+		obsrecv:  obsrecv,
 	}
 	repository := Repository{
 		FullName: "org/repo",
@@ -348,12 +353,11 @@ func TestBatchDefault(t *testing.T) {
 	}
 
 	// act
-	count, err := ghalr.batch(context.Background(), repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
+	err = ghalr.batch(context.Background(), repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
 
 	// assert
 	assert.NoError(t, err)
 	assert.Equal(t, 3, logsConsumer.LogRecordCount())
-	assert.Equal(t, 3, count)
 }
 
 func TestBatchMultiLogLines(t *testing.T) {
@@ -384,12 +388,17 @@ func TestBatchMultiLogLines(t *testing.T) {
 		t.Fatal(err)
 	}
 	logsConsumer := new(consumertest.LogsSink)
+	obsrecv, err := receiverhelper.NewObsReport(receiverhelper.ObsReportSettings{ReceiverCreateSettings: receivertest.NewNopCreateSettings()})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ghalr := githubActionsLogReceiver{
 		config: &Config{
 			BatchSize: 2,
 		},
 		logger:   zaptest.NewLogger(t),
 		consumer: logsConsumer,
+		obsrecv:  obsrecv,
 	}
 	repository := Repository{
 		FullName: "org/repo",
@@ -408,12 +417,11 @@ func TestBatchMultiLogLines(t *testing.T) {
 	}
 
 	// act
-	count, err := ghalr.batch(context.Background(), repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
+	err = ghalr.batch(context.Background(), repository, run, jobs, func(f ...zap.Field) []zap.Field { return f })
 
 	// assert
 	assert.NoError(t, err)
 	assert.Equal(t, 3, logsConsumer.LogRecordCount())
-	assert.Equal(t, 3, count)
 	assert.Equal(t, 2, logsConsumer.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().Len())
 	assert.Equal(t, 1, logsConsumer.AllLogs()[1].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().Len())
 	assert.Equal(t, "Some message", logsConsumer.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Body().Str())
