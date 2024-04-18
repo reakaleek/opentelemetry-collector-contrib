@@ -261,10 +261,10 @@ func (ghalr *githubActionsLogReceiver) processBatch(ctx context.Context, withWor
 	logs := plog.NewLogs()
 	resourceLogs := logs.ResourceLogs().AppendEmpty()
 	resourceAttributes := resourceLogs.Resource().Attributes()
-	resourceAttributes.PutStr("service.name", fmt.Sprintf("github-actions-%s-%s", repository.Org, repository.Name))
+	serviceName := generateServiceName(ghalr.config, repository.FullName)
+	resourceAttributes.PutStr("service.name", serviceName)
 	scopeLogsSlice := resourceLogs.ScopeLogs()
 	scopeLogs := scopeLogsSlice.AppendEmpty()
-	scopeLogs.Scope().SetName("github-actions")
 	logRecords := scopeLogs.LogRecords()
 	for _, line := range batch {
 		logLine, err := parseLogLine(line)

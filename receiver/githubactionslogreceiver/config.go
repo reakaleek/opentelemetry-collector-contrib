@@ -26,6 +26,9 @@ type Config struct {
 	GitHubAuth              GitHubAuth          `mapstructure:"github_auth"`
 	Retry                   RetryConfig         `mapstructure:"retry"`
 	BatchSize               int                 `mapstructure:"batch_size"`
+	CustomServiceName       string              `mapstructure:"custom_service_name"`
+	ServiceNamePrefix       string              `mapstructure:"service_name_prefix"`
+	ServiceNameSuffix       string              `mapstructure:"service_name_suffix"`
 }
 
 type RetryConfig struct {
