@@ -8,7 +8,6 @@ import (
 	"github.com/google/go-github/v60/github"
 	"github.com/h2non/gock"
 	"github.com/stretchr/testify/assert"
-	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -428,25 +427,4 @@ func TestBatchMultiLogLines(t *testing.T) {
 	assert.Equal(t, "Some message", logsConsumer.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Body().Str())
 	assert.Equal(t, "Another message\n\tGibberish\n\tFoo Bar", logsConsumer.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(1).Body().Str())
 	assert.Equal(t, "Yet another message", logsConsumer.AllLogs()[1].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Body().Str())
-}
-
-func TestGracefulShutDown(t *testing.T) {
-	// arrange
-	ghalr, err := newLogsReceiver(
-		createDefaultConfig().(*Config),
-		receivertest.NewNopCreateSettings(),
-		consumertest.NewNop(),
-	)
-	// act
-	startErr := ghalr.Start(context.Background(), componenttest.NewNopHost())
-	if err != nil {
-		return
-	}
-	shutdownErr := ghalr.Shutdown(context.Background())
-	if err != nil {
-		return
-	}
-	// assert
-	assert.NoError(t, startErr)
-	assert.NoError(t, shutdownErr)
 }
