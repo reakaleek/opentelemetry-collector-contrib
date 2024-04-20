@@ -1,0 +1,14 @@
+type: githubactionslog
+scope_name: otelcol/githubactionslogreceiver
+
+status:
+  class: receiver
+  stability:
+    alpha: [logs]
+  distributions: [contrib]
+  codeowners:
+    active: []
+
+tests:
+    config:
+        endpoint: localhost:19419

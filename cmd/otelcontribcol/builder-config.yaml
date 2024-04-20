@@ -146,6 +146,7 @@ receivers:
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/filestatsreceiver v0.98.0
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/flinkmetricsreceiver v0.98.0
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/fluentforwardreceiver v0.98.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/githubactionslogreceiver v0.98.0
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/googlecloudpubsubreceiver v0.98.0
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/googlecloudspannerreceiver v0.98.0
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/haproxyreceiver v0.98.0

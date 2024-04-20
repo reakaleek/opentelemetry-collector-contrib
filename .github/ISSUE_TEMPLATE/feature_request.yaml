@@ -201,6 +201,7 @@ body:
       - receiver/filestats
       - receiver/flinkmetrics
       - receiver/fluentforward
+      - receiver/githubactionslog
       - receiver/gitprovider
       - receiver/googlecloudpubsub
       - receiver/googlecloudspanner

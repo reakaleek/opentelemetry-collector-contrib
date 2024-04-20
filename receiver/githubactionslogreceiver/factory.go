@@ -3,6 +3,7 @@ package githubactionslogreceiver
 import (
 	"context"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/common/localhostgate"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/githubactionslogreceiver/internal/metadata"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/consumer"
@@ -38,8 +39,8 @@ func createLogsReceiver(
 // NewFactory creates a factory for githubactionslogsreceiver.
 func NewFactory() receiver.Factory {
 	return receiver.NewFactory(
-		component.MustNewType("githubactionslog"),
+		component.MustNewType(metadata.Type.String()),
 		createDefaultConfig,
-		receiver.WithLogs(createLogsReceiver, component.StabilityLevelDevelopment),
+		receiver.WithLogs(createLogsReceiver, metadata.LogsStability),
 	)
 }
