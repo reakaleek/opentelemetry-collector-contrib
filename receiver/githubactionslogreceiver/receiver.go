@@ -116,7 +116,7 @@ func (ghalr *githubActionsLogReceiver) handleEvent(w http.ResponseWriter, r *htt
 		handleWorkflowRunEvent(ctx, ghalr, w, *event)
 	default:
 		{
-			ghalr.logger.Debug("Skipping the request because it is not a workflow run event")
+			ghalr.logger.Debug("Skipping the request because it is not a workflow run event", zap.Any("event", event))
 			w.WriteHeader(http.StatusOK)
 		}
 	}
