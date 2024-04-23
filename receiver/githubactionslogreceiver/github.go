@@ -144,10 +144,10 @@ func getRunLog(
 			return nil, nil, err
 		}
 		response, err := fetchLog(httpClient, logURL.String())
-		defer response.Close()
 		if err != nil {
 			return nil, nil, err
 		}
+		defer response.Close()
 		err = cache.Create(fp, response)
 		if err != nil {
 			return nil, nil, err
