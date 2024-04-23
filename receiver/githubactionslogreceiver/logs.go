@@ -1,6 +1,7 @@
 package githubactionslogreceiver
 
 import (
+	"fmt"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"strings"
@@ -42,9 +43,12 @@ func startsWithTimestamp(line string) bool {
 func parseLogLine(line string) (LogLine, error) {
 	var severityText string
 	var severityNumber = 0 // Unspecified
-	parts := strings.SplitN(line, " ", 2)
-	extractedTimestamp := parts[0]
-	extractedLogMessage := parts[1]
+	before, after, found := strings.Cut(line, " ")
+	if !found {
+		return LogLine{}, fmt.Errorf("could not parse log line: %s", line)
+	}
+	extractedTimestamp := before
+	extractedLogMessage := after
 	timestamp, err := time.Parse(time.RFC3339Nano, extractedTimestamp)
 	if err != nil {
 		return LogLine{}, err
