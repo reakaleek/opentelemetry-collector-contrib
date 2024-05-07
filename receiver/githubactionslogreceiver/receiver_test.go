@@ -194,7 +194,7 @@ func TestConsumeLogsWithRetry(t *testing.T) {
 			return consumererror.NewLogs(fmt.Errorf("error %d", retryCounter), plog.NewLogs())
 		},
 	}
-	ghalr, err := newLogsReceiver(
+	ghalr, err := newReceiver(
 		&Config{
 			GitHubAuth: GitHubAuth{
 				Token: "token",
@@ -203,8 +203,8 @@ func TestConsumeLogsWithRetry(t *testing.T) {
 			HealthCheckPath: defaultHealthCheckPath,
 		},
 		receivertest.NewNopCreateSettings(),
-		consumer,
 	)
+	ghalr.consumer = consumer
 
 	// act
 	err = ghalr.consumeLogsWithRetry(
@@ -232,7 +232,7 @@ func TestConsumeLogsWithRetryPermanent(t *testing.T) {
 			return fmt.Errorf("error %d", retryCounter)
 		},
 	}
-	ghalr, err := newLogsReceiver(
+	ghalr, err := newReceiver(
 		&Config{
 			GitHubAuth: GitHubAuth{
 				Token: "token",
@@ -241,8 +241,8 @@ func TestConsumeLogsWithRetryPermanent(t *testing.T) {
 			HealthCheckPath: defaultHealthCheckPath,
 		},
 		receivertest.NewNopCreateSettings(),
-		consumer,
 	)
+	ghalr.consumer = consumer
 
 	// act
 	err = ghalr.consumeLogsWithRetry(
@@ -271,7 +271,7 @@ func TestConsumeLogsWithRetryMaxElapsedTime(t *testing.T) {
 			return consumererror.NewLogs(fmt.Errorf("error %d", retryCounter), plog.NewLogs())
 		},
 	}
-	ghalr, err := newLogsReceiver(
+	ghalr, err := newReceiver(
 		&Config{
 			GitHubAuth: GitHubAuth{
 				Token: "token",
@@ -283,8 +283,8 @@ func TestConsumeLogsWithRetryMaxElapsedTime(t *testing.T) {
 			},
 		},
 		receivertest.NewNopCreateSettings(),
-		consumer,
 	)
+	ghalr.consumer = consumer
 
 	// act
 	err = ghalr.consumeLogsWithRetry(

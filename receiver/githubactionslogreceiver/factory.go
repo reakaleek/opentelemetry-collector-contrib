@@ -22,7 +22,8 @@ func createDefaultConfig() component.Config {
 			MaxInterval:     defaultRetryMaxInterval,
 			MaxElapsedTime:  defaultRetryMaxElapsedTime,
 		},
-		BatchSize: 10000,
+		BatchSize:            10000,
+		MetricsBuilderConfig: metadata.DefaultMetricsBuilderConfig(),
 	}
 }
 
@@ -36,11 +37,22 @@ func createLogsReceiver(
 	return newLogsReceiver(cfg, params, consumer)
 }
 
+func createMetricsReceiver(
+	_ context.Context,
+	params receiver.CreateSettings,
+	rConf component.Config,
+	consumer consumer.Metrics,
+) (receiver.Metrics, error) {
+	cfg := rConf.(*Config)
+	return newMetricsReceiver(cfg, params, consumer)
+}
+
 // NewFactory creates a factory for githubactionslogsreceiver.
 func NewFactory() receiver.Factory {
 	return receiver.NewFactory(
 		component.MustNewType(metadata.Type.String()),
 		createDefaultConfig,
+		receiver.WithMetrics(createMetricsReceiver, component.StabilityLevelAlpha),
 		receiver.WithLogs(createLogsReceiver, metadata.LogsStability),
 	)
 }

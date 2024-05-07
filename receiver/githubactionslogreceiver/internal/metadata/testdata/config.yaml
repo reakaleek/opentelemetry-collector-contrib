@@ -1,0 +1,13 @@
+default:
+all_set:
+  metrics:
+    github.workflow.runs.count:
+      enabled: true
+    github.workflow.runs.failed.count:
+      enabled: true
+none_set:
+  metrics:
+    github.workflow.runs.count:
+      enabled: false
+    github.workflow.runs.failed.count:
+      enabled: false

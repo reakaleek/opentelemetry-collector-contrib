@@ -8,9 +8,12 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/go-github/v60/github"
 	"github.com/julienschmidt/httprouter"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/sharedcomponent"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/githubactionslogreceiver/internal/metadata"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/consumererror"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/receiver"
 	"go.opentelemetry.io/collector/receiver/receiverhelper"
@@ -22,20 +25,58 @@ import (
 )
 
 type githubActionsLogReceiver struct {
-	config      *Config
-	consumer    consumer.Logs
-	logger      *zap.Logger
-	runLogCache runLogCache
-	server      *http.Server
-	settings    receiver.CreateSettings
-	ghClient    *github.Client
-	obsrecv     *receiverhelper.ObsReport
+	config          *Config
+	consumer        consumer.Logs
+	metricsConsumer consumer.Metrics
+	logger          *zap.Logger
+	runLogCache     runLogCache
+	server          *http.Server
+	settings        receiver.CreateSettings
+	ghClient        *github.Client
+	obsrecv         *receiverhelper.ObsReport
+	metricsBuilder  *metadata.MetricsBuilder
 }
 
-func newLogsReceiver(cfg *Config, params receiver.CreateSettings, consumer consumer.Logs) (*githubActionsLogReceiver, error) {
+var receivers = sharedcomponent.NewSharedComponents()
+
+func newLogsReceiver(cfg *Config, params receiver.CreateSettings, consumer consumer.Logs) (receiver.Logs, error) {
+	var err error
+	r := receivers.GetOrAdd(cfg, func() component.Component {
+		var rcv component.Component
+		rcv, err = newReceiver(cfg, params)
+		return rcv
+	})
+	if err != nil {
+		return nil, err
+	}
+	r.Unwrap().(*githubActionsLogReceiver).consumer = consumer
+	return r, nil
+}
+
+func newMetricsReceiver(cfg *Config, params receiver.CreateSettings, consumer consumer.Metrics) (receiver.Metrics, error) {
+	var err error
+	r := receivers.GetOrAdd(cfg, func() component.Component {
+		var rcv component.Component
+		rcv, err = newReceiver(cfg, params)
+		return rcv
+	})
+	if err != nil {
+		return nil, err
+	}
+	ghalr := r.Unwrap().(*githubActionsLogReceiver)
+	ghalr.metricsConsumer = consumer
+	ghalr.metricsBuilder = metadata.NewMetricsBuilder(cfg.MetricsBuilderConfig, params)
+	return r, nil
+}
+
+func newReceiver(cfg *Config, params receiver.CreateSettings) (*githubActionsLogReceiver, error) {
+	transport := "http"
+	if cfg.TLSSetting != nil {
+		transport = "https"
+	}
 	obsrecv, err := receiverhelper.NewObsReport(receiverhelper.ObsReportSettings{
 		ReceiverID:             params.ID,
-		Transport:              "http",
+		Transport:              transport,
 		ReceiverCreateSettings: params,
 	})
 	if err != nil {
@@ -49,7 +90,6 @@ func newLogsReceiver(cfg *Config, params receiver.CreateSettings, consumer consu
 		config:      cfg,
 		logger:      params.Logger,
 		runLogCache: rlc{},
-		consumer:    consumer,
 		settings:    params,
 		obsrecv:     obsrecv,
 		ghClient:    ghClient,
@@ -149,6 +189,16 @@ func handleWorkflowRunEvent(
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	if ghalr.metricsConsumer != nil {
+		metrics := ghalr.metricsBuilder.Emit()
+		for i := 0; i < metrics.ResourceMetrics().Len(); i++ {
+			resourceMetrics := metrics.ResourceMetrics().At(i)
+			resourceMetrics.Resource().Attributes().PutStr("service.name", generateServiceName(ghalr.config, event.GetRepo().GetFullName()))
+		}
+		if err := ghalr.metricsConsumer.ConsumeMetrics(ctx, metrics); err != nil {
+			ghalr.logger.Error("Failed to emit metrics", withWorkflowInfoFields(zap.Error(err))...)
+		}
+	}
 	ghalr.logger.Info(
 		"GitHub Api Rate limits",
 		withWorkflowInfoFields(
@@ -164,6 +214,17 @@ func (ghalr *githubActionsLogReceiver) processWorkflowRunEvent(
 	withWorkflowInfoFields func(fields ...zap.Field) []zap.Field,
 	event github.WorkflowRunEvent,
 ) (githubRateLimit, error) {
+	switch *event.GetWorkflowRun().Conclusion {
+	case "failure":
+		ghalr.metricsBuilder.RecordGithubWorkflowRunsFailedCountDataPoint(pcommon.NewTimestampFromTime(time.Now()), 1)
+	}
+	ghalr.metricsBuilder.RecordGithubWorkflowRunsCountDataPoint(pcommon.NewTimestampFromTime(time.Now()), 1)
+	ghalr.metricsBuilder.RecordGithubWorkflowRunsCountDataPoint(pcommon.NewTimestampFromTime(time.Now()), 1)
+
+	if ghalr.consumer == nil {
+		return githubRateLimit{}, nil
+	}
+
 	allWorkflowJobs, rateLimit, err := getWorkflowJobs(ctx, event, ghalr.ghClient)
 	if err != nil {
 		return rateLimit, fmt.Errorf("failed to get workflow jobs: %w", err)
