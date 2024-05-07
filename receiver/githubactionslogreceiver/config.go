@@ -2,6 +2,7 @@ package githubactionslogreceiver
 
 import (
 	"fmt"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/githubactionslogreceiver/internal/metadata"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configopaque"
 	"go.uber.org/multierr"
@@ -20,15 +21,16 @@ const (
 
 type Config struct {
 	confighttp.ServerConfig `mapstructure:",squash"`
-	Path                    string              `mapstructure:"path"`
-	HealthCheckPath         string              `mapstructure:"health_check_path"`
-	WebhookSecret           configopaque.String `mapstructure:"webhook_secret"`
-	GitHubAuth              GitHubAuth          `mapstructure:"github_auth"`
-	Retry                   RetryConfig         `mapstructure:"retry"`
-	BatchSize               int                 `mapstructure:"batch_size"`
-	CustomServiceName       string              `mapstructure:"custom_service_name"`
-	ServiceNamePrefix       string              `mapstructure:"service_name_prefix"`
-	ServiceNameSuffix       string              `mapstructure:"service_name_suffix"`
+	Path                    string                        `mapstructure:"path"`
+	HealthCheckPath         string                        `mapstructure:"health_check_path"`
+	WebhookSecret           configopaque.String           `mapstructure:"webhook_secret"`
+	GitHubAuth              GitHubAuth                    `mapstructure:"github_auth"`
+	Retry                   RetryConfig                   `mapstructure:"retry"`
+	BatchSize               int                           `mapstructure:"batch_size"`
+	CustomServiceName       string                        `mapstructure:"custom_service_name"`
+	ServiceNamePrefix       string                        `mapstructure:"service_name_prefix"`
+	ServiceNameSuffix       string                        `mapstructure:"service_name_suffix"`
+	MetricsBuilderConfig    metadata.MetricsBuilderConfig `mapstructure:",squash"`
 }
 
 type RetryConfig struct {

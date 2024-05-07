@@ -12,3 +12,21 @@ status:
 tests:
     config:
         endpoint: localhost:19419
+
+metrics:
+  github.workflow.runs.count:
+    description: The number of workflow runs.
+    unit: "{run}"
+    sum:
+      monotonic: true
+      aggregation_temporality: cumulative
+      value_type: int
+    enabled: true
+  github.workflow.runs.failed.count:
+    description: The number of failed workflow runs.
+    unit: "{run}"
+    sum:
+      monotonic: true
+      aggregation_temporality: cumulative
+      value_type: int
+    enabled: true
