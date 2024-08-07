@@ -107,6 +107,7 @@ func attachRunAttributes(logRecord *plog.LogRecord, run Run) {
 	logRecord.Attributes().PutStr("github.workflow_run.updated_at", pcommon.NewTimestampFromTime(run.UpdatedAt).String())
 	logRecord.Attributes().PutStr("github.workflow_run.actor.login", run.ActorLogin)
 	logRecord.Attributes().PutInt("github.workflow_run.actor.id", run.ActorID)
+	logRecord.Attributes().PutStr("github.workflow_run.head_branch", run.HeadBranch)
 }
 
 func attachJobAttributes(logRecord *plog.LogRecord, job Job) {
