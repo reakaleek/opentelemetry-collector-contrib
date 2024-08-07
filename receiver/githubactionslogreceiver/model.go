@@ -34,6 +34,7 @@ type Run struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 	ActorLogin   string
 	ActorID      int64 `json:"actor_id"`
+	HeadBranch   string
 }
 
 type Job struct {
@@ -122,6 +123,7 @@ func mapRun(run *github.WorkflowRun) Run {
 		UpdatedAt:    run.GetUpdatedAt().Time,
 		ActorLogin:   run.GetActor().GetLogin(),
 		ActorID:      run.GetActor().GetID(),
+		HeadBranch:   run.GetHeadBranch(),
 	}
 }
 

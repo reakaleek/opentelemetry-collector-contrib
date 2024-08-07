@@ -44,6 +44,7 @@ func TestAttachRunAttributes(t *testing.T) {
 		UpdatedAt:    time.Now().Add(time.Duration(60)),
 		ActorLogin:   "reakaleek",
 		ActorID:      1,
+		HeadBranch:   "main",
 	}
 	logRecord := plog.NewLogRecord()
 
@@ -51,7 +52,7 @@ func TestAttachRunAttributes(t *testing.T) {
 	attachRunAttributes(&logRecord, run)
 
 	// assert
-	assert.Equal(t, 11, logRecord.Attributes().Len())
+	assert.Equal(t, 12, logRecord.Attributes().Len())
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.id", pcommon.NewValueInt(1))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.name", pcommon.NewValueStr("Run Name"))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.run_attempt", pcommon.NewValueInt(1))
@@ -63,6 +64,7 @@ func TestAttachRunAttributes(t *testing.T) {
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.updated_at", pcommon.NewValueStr(pcommon.NewTimestampFromTime(run.UpdatedAt).String()))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.actor.login", pcommon.NewValueStr("reakaleek"))
 	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.actor.id", pcommon.NewValueInt(1))
+	assertAttributeEquals(t, logRecord.Attributes(), "github.workflow_run.head_branch", pcommon.NewValueStr("main"))
 }
 
 func TestAttachJobAttributes(t *testing.T) {
